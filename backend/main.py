@@ -3,6 +3,16 @@
 # ─────────────────────────────────────────────────────────────
 
 import os
+import sys
+
+# Ajouter le dossier backend au sys.path
+# Fonctionne dans les deux cas :
+#   - local    : python backend/main.py
+#   - Railway  : uvicorn backend.main:app
+_backend_dir = os.path.dirname(os.path.abspath(__file__))
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
+
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response, FileResponse
