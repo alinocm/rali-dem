@@ -1,0 +1,2484 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RALI-DEM — Générateur de questions de logique</title>
+  <style>
+    /* ── Reset & variables ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy:   #16213e;
+      --blue:   #0f3460;
+      --teal:   #1a6b72;
+      --accent: #e94560;
+      --light:  #f0f4f8;
+      --white:  #ffffff;
+      --gray:   #6b7280;
+      --green:  #16a34a;
+      --orange: #ea580c;
+      --radius: 12px;
+      --shadow: 0 4px 24px rgba(0,0,0,.10);
+    }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--light);
+      color: var(--navy);
+      min-height: 100vh;
+    }
+
+    /* ── Layout ── */
+    .app { display: flex; min-height: 100vh; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 260px; height: 100vh;
+      background: var(--navy);
+      display: flex; flex-direction: column;
+      position: fixed; top: 0; left: 0; z-index: 100;
+      overflow-y: auto;   /* scroll si contenu trop long */
+    }
+    .sidebar-logo {
+      padding: 28px 20px 20px;
+      border-bottom: 1px solid rgba(255,255,255,.1);
+    }
+    .sidebar-logo h1 {
+      color: var(--white); font-size: 22px; font-weight: 700;
+    }
+    .sidebar-logo p { color: rgba(255,255,255,.5); font-size: 11px; margin-top: 4px; }
+
+    .nav { flex: 1; padding: 16px 0; overflow-y: auto; }
+    .nav-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 20px; cursor: pointer;
+      color: rgba(255,255,255,.65); font-size: 14px;
+      transition: all .2s; border-left: 3px solid transparent;
+    }
+    .nav-item:hover { color: var(--white); background: rgba(255,255,255,.06); }
+    .nav-item.active {
+      color: var(--white); background: rgba(233,69,96,.15);
+      border-left-color: var(--accent);
+    }
+    .nav-item .icon { font-size: 18px; width: 22px; text-align: center; }
+
+    .sidebar-footer {
+      padding: 16px 20px;
+      border-top: 1px solid rgba(255,255,255,.1);
+      color: rgba(255,255,255,.4); font-size: 11px;
+    }
+
+    /* ── Main ── */
+    .main { margin-left: 260px; flex: 1; display: flex; flex-direction: column; }
+
+    .topbar {
+      background: var(--white); padding: 16px 32px;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 50;
+    }
+    .topbar h2 { font-size: 18px; font-weight: 600; }
+    .topbar-right { display: flex; align-items: center; gap: 12px; }
+
+    .badge {
+      background: var(--accent); color: var(--white);
+      font-size: 11px; font-weight: 700;
+      padding: 3px 10px; border-radius: 20px;
+    }
+
+    .content { padding: 28px 32px; flex: 1; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--white); border-radius: var(--radius);
+      padding: 24px; box-shadow: var(--shadow);
+      margin-bottom: 20px;
+    }
+    .card-title {
+      font-size: 15px; font-weight: 600; margin-bottom: 16px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .card-title .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent);
+    }
+
+    /* ── Grid ── */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+
+    /* ── Stats cards ── */
+    .stat-card {
+      background: var(--white); border-radius: var(--radius);
+      padding: 20px; box-shadow: var(--shadow);
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .stat-card .stat-icon {
+      font-size: 28px; margin-bottom: 4px;
+    }
+    .stat-card .stat-val {
+      font-size: 28px; font-weight: 700; color: var(--navy);
+    }
+    .stat-card .stat-label { font-size: 12px; color: var(--gray); }
+
+    /* ── Form elements ── */
+    label { font-size: 13px; font-weight: 500; display: block; margin-bottom: 6px; }
+    select, input {
+      width: 100%; padding: 10px 14px;
+      border: 1px solid #d1d5db; border-radius: 8px;
+      font-size: 14px; outline: none;
+      transition: border-color .2s;
+      background: var(--white);
+    }
+    select:focus, input:focus { border-color: var(--teal); }
+
+    .form-row { margin-bottom: 14px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 20px; border-radius: 8px; border: none;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      transition: all .2s;
+    }
+    .btn-primary { background: var(--accent); color: var(--white); }
+    .btn-primary:hover { background: #c73652; transform: translateY(-1px); }
+    .btn-secondary { background: var(--light); color: var(--navy); }
+    .btn-secondary:hover { background: #e2e8f0; }
+    .btn-teal { background: var(--teal); color: var(--white); }
+    .btn-teal:hover { background: #145a60; }
+    .btn-navy { background: var(--navy); color: var(--white); }
+    .btn-navy:hover { background: #0d1a30; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; transform: none !important; }
+
+    /* ── Question card ── */
+    .question-box {
+      background: var(--light); border-radius: var(--radius);
+      padding: 20px; margin: 16px 0;
+      border-left: 4px solid var(--teal);
+    }
+    .question-enonce {
+      font-size: 15px; line-height: 1.7; margin-bottom: 16px;
+      font-weight: 500;
+    }
+    .choices { display: flex; flex-direction: column; gap: 10px; }
+    .choice {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 12px 16px; border-radius: 8px;
+      border: 2px solid #e5e7eb; cursor: pointer;
+      transition: all .2s; background: var(--white);
+    }
+    .choice:hover { border-color: var(--teal); background: #f0fafa; }
+    .choice.selected { border-color: var(--teal); background: #e6f7f8; }
+    .choice.correct { border-color: var(--green); background: #f0fdf4; }
+    .choice.wrong   { border-color: var(--accent); background: #fff1f2; }
+    .choice-letter {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: var(--navy); color: var(--white);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; flex-shrink: 0;
+    }
+    .choice.correct .choice-letter { background: var(--green); }
+    .choice.wrong   .choice-letter { background: var(--accent); }
+    .choice-text { font-size: 14px; line-height: 1.5; padding-top: 3px; }
+
+    /* ── Feedback ── */
+    .feedback {
+      border-radius: var(--radius); padding: 20px;
+      margin-top: 16px; display: none;
+    }
+    .feedback.correct { background: #f0fdf4; border: 1px solid #86efac; }
+    .feedback.wrong   { background: #fff1f2; border: 1px solid #fca5a5; }
+    .feedback.show    { display: block; }
+    .feedback-title { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+    .feedback-regle { font-size: 13px; color: var(--gray); margin-bottom: 8px; }
+    .feedback-formule {
+      background: var(--navy); color: var(--white);
+      padding: 12px 16px; border-radius: 8px;
+      font-family: monospace; font-size: 13px;
+      white-space: pre;          /* Conserver l'alignement exact */
+      overflow-x: auto;          /* Scroll horizontal si trop large */
+      margin: 10px 0;
+      display: block;
+      max-width: 100%;
+    }
+    .feedback-preuve {
+      background: #f8fafc; border: 1px solid #e2e8f0;
+      padding: 12px 16px; border-radius: 8px;
+      font-family: monospace; font-size: 12px;
+      white-space: pre;          /* Conserver l'alignement exact */
+      overflow-x: auto;          /* Scroll horizontal si trop large */
+      margin-top: 8px;
+      display: block;
+      max-width: 100%;
+    }
+    .feedback-conseil {
+      background: #fef9c3; border: 1px solid #fde047;
+      padding: 10px 14px; border-radius: 8px;
+      font-size: 13px; margin-top: 10px;
+    }
+
+    /* ── Meta tags ── */
+    .meta-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .tag {
+      font-size: 11px; font-weight: 600; padding: 3px 10px;
+      border-radius: 20px;
+    }
+    .tag-bloom   { background: #dbeafe; color: #1d4ed8; }
+    .tag-niveau  { background: #dcfce7; color: #166534; }
+    .tag-ert     { background: #fef3c7; color: #92400e; }
+    .tag-score   { background: #f3e8ff; color: #7c3aed; }
+
+    /* ── Timer ── */
+    .timer-bar {
+      height: 6px; border-radius: 3px;
+      background: #e5e7eb; margin: 12px 0; overflow: hidden;
+    }
+    .timer-fill {
+      height: 100%; border-radius: 3px;
+      background: var(--green);
+      transition: width 1s linear, background .5s;
+    }
+    .timer-fill.warning { background: var(--orange); }
+    .timer-fill.danger  { background: var(--accent); }
+    .timer-text { font-size: 12px; color: var(--gray); text-align: right; }
+
+    /* ── Indice ── */
+    .indice-box {
+      background: #fffbeb; border: 1px solid #fcd34d;
+      border-radius: 8px; padding: 12px 16px;
+      font-size: 13px; margin-top: 12px;
+      display: none;
+    }
+    .indice-box.show { display: block; }
+    .btn-navy    { background:#1e3a5f;color:white; }
+    .btn-teal    { background:#0d9488;color:white; }
+    .btn-navy:hover { background:#163059; }
+    .btn-teal:hover { background:#0b7a70; }
+
+    /* ── Progress ── */
+    .progress-bar {
+      height: 8px; border-radius: 4px;
+      background: #e5e7eb; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; border-radius: 4px;
+      background: linear-gradient(90deg, var(--teal), var(--accent));
+      transition: width .5s ease;
+    }
+
+    /* ── Table ── */
+    table {
+      width: 100%; border-collapse: collapse; font-size: 13px;
+    }
+    th {
+      background: var(--navy); color: var(--white);
+      padding: 10px 14px; text-align: left; font-size: 12px;
+    }
+    td { padding: 10px 14px; border-bottom: 1px solid #f3f4f6; }
+    tr:hover td { background: #f9fafb; }
+
+    /* ── Alert ── */
+    .alert {
+      padding: 12px 16px; border-radius: 8px;
+      font-size: 13px; margin-bottom: 14px;
+    }
+    .alert-info  { background: #dbeafe; color: #1d4ed8; }
+    .alert-success { background: #dcfce7; color: #166534; }
+    .alert-warn  { background: #fef3c7; color: #92400e; }
+    .alert-error { background: #fee2e2; color: #dc2626; }
+
+    /* ── Bulletin ── */
+    .bulletin {
+      border-radius: var(--radius); overflow: hidden;
+      box-shadow: var(--shadow); display: none;
+    }
+    .bulletin.show { display: block; }
+    .bulletin-header {
+      background: var(--navy); color: var(--white);
+      padding: 24px; text-align: center;
+    }
+    .bulletin-note {
+      font-size: 48px; font-weight: 700; color: var(--accent);
+    }
+    .bulletin-body { background: var(--white); padding: 24px; }
+
+    /* ── Tabs ── */
+    .tabs { display: flex; gap: 4px; margin-bottom: 20px; }
+    .tab {
+      padding: 8px 18px; border-radius: 8px; cursor: pointer;
+      font-size: 13px; font-weight: 500;
+      background: var(--light); color: var(--gray);
+      transition: all .2s;
+    }
+    .tab.active { background: var(--navy); color: var(--white); }
+
+    /* ── Section management ── */
+    .section {
+      display: none;
+      padding: 24px 32px;        /* espace sous la topbar et sur les côtés */
+      min-height: calc(100vh - 65px);
+    }
+    .section.active { display: block; }
+
+    /* ── Responsive ── */
+    @media (max-width: 900px) {
+      .sidebar { width: 220px; }
+      .main { margin-left: 220px; }
+      .grid-3 { grid-template-columns: 1fr 1fr; }
+      .form-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 640px) {
+      .sidebar { display: none; }
+      .main { margin-left: 0; }
+      .grid-2, .grid-3, .form-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── Loader ── */
+    .loader {
+      display: inline-block; width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: var(--white);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Niveau badge ── */
+    .niv-faible  { background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 10px; font-size:11px; font-weight:600; }
+    .niv-moyen   { background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 10px; font-size:11px; font-weight:600; }
+    .niv-eleve   { background: #fee2e2; color: #dc2626; padding: 2px 8px; border-radius: 10px; font-size:11px; font-weight:600; }
+
+    .separator { height: 1px; background: #f3f4f6; margin: 16px 0; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ═══════════════════════════════════════════
+       SIDEBAR
+  ═══════════════════════════════════════════ -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <h1>RALI-DEM</h1>
+      <p>Générateur de questions de logique</p>
+    </div>
+    <nav class="nav">
+      <!-- ── Barre utilisateur ── -->
+      <div id="nav-user-bar" style="padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:8px;display:none">
+        <div style="font-size:12px;color:rgba(255,255,255,0.6)">Connecté en tant que</div>
+        <div id="nav-user-name" style="font-weight:700;color:#fff;font-size:13px"></div>
+        <div id="nav-user-role" style="font-size:11px;color:#a78bfa"></div>
+        <button onclick="deconnecter()" style="margin-top:6px;padding:4px 10px;background:rgba(255,255,255,0.1);border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:11px;width:100%">🚪 Déconnexion</button>
+      </div>
+
+      <!-- ── Menu admin (visible uniquement pour administrateur) ── -->
+      <div id="nav-admin" style="display:none">
+        <div style="padding:8px 16px 4px;font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px;border-top:1px solid rgba(255,255,255,0.1);margin-top:4px">⚙️ Administration</div>
+        <div class="nav-item" onclick="showSection('admin-stats', this)">
+          <span class="icon">🔬</span> Statistiques
+        </div>
+        <div class="nav-item" onclick="showSection('admin-apprenants', this)">
+          <span class="icon">👥</span> Apprenants
+        </div>
+      </div>
+
+      <!-- ── Nav principale (visible après connexion) ── -->
+      <div id="nav-main" style="display:block">
+        <div class="nav-item active" onclick="showSection('dashboard', this)">
+          <span class="icon">📊</span> Tableau de bord
+        </div>
+        <div class="nav-item" onclick="showSection('generer', this)">
+          <span class="icon">⚡</span> Générer une question
+        </div>
+        <div class="nav-item" onclick="showSection('adaptatif', this)">
+          <span class="icon">🎯</span> Parcours adaptatif
+        </div>
+        <div class="nav-item" onclick="showSection('examen', this)">
+          <span class="icon">📝</span> Mode examen
+        </div>
+        <div class="nav-item" onclick="showSection('historique', this)">
+          <span class="icon">📚</span> Mon historique
+        </div>
+        <div class="nav-item" onclick="showSection('rapport', this)">
+          <span class="icon">📈</span> Rapport d'erreurs
+        </div>
+        <div class="nav-item" onclick="showSection('export', this)">
+          <span class="icon">📄</span> Exporter une fiche
+        </div>
+      </div>
+
+      <!-- ── Nav auth (visible avant connexion) ── -->
+      <div id="nav-auth">
+        <div class="nav-item active" onclick="showSection('login', this)">
+          <span class="icon">🔑</span> Connexion
+        </div>
+        <div class="nav-item" onclick="showSection('inscription', this)">
+          <span class="icon">✏️</span> Inscription
+        </div>
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      v1.0.0 &nbsp;·&nbsp; RALI-DEM © 2026
+    </div>
+  </aside>
+
+  <!-- ═══════════════════════════════════════════
+       MAIN
+  ═══════════════════════════════════════════ -->
+  <main class="main">
+    <div class="topbar">
+      <h2 id="topbar-title">Tableau de bord</h2>
+      <div class="topbar-right">
+        <span id="topbar-badge" class="badge">RALI-DEM</span>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ─────────────────────────────────────
+           SECTION : DASHBOARD
+      ───────────────────────────────────── -->
+      <section id="s-dashboard" class="section active">
+        <div class="grid-3" style="margin-bottom:20px">
+          <div class="stat-card">
+            <div class="stat-icon">📝</div>
+            <div class="stat-val" id="stat-total">—</div>
+            <div class="stat-label">Questions générées</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🎯</div>
+            <div class="stat-val" id="stat-score">—</div>
+            <div class="stat-label">Score pédagogique moyen</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">⏱️</div>
+            <div class="stat-val" id="stat-ert">—</div>
+            <div class="stat-label">ERT moyen (secondes)</div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title"><div class="dot"></div>Objectifs disponibles</div>
+            <div id="objectifs-list"></div>
+          </div>
+          <div class="card">
+            <div class="card-title"><div class="dot"></div>Répartition par objectif</div>
+            <div id="repartition-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────────────────
+           SECTION : GÉNÉRER
+      ───────────────────────────────────── -->
+      <section id="s-generer" class="section">
+        <div class="grid-2">
+          <!-- Formulaire -->
+          <div class="card">
+            <div class="card-title"><div class="dot"></div>Paramètres de génération</div>
+            <div class="form-row">
+              <label>Objectif académique</label>
+              <select id="g-objectif"></select>
+            </div>
+            <div class="form-grid">
+              <div class="form-row">
+                <label>Mode Bloom</label>
+                <select id="g-bloom">
+                  <option value="comprehension">Compréhension</option>
+                  <option value="analyse">Analyse</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label>Niveau de complexité</label>
+                <select id="g-niveau">
+                  <option value="faible">Faible</option>
+                  <option value="moyen" selected>Moyen</option>
+                  <option value="eleve">Élevé</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label>&nbsp;</label>
+                <button class="btn btn-primary" onclick="genererQuestion()" id="btn-generer">
+                  ⚡ Générer
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Question générée -->
+          <div class="card">
+            <div class="card-title"><div class="dot"></div>Question générée</div>
+            <div id="question-zone">
+              <div class="alert alert-info">
+                Choisissez vos paramètres et cliquez sur Générer.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Zone de réponse et feedback -->
+        <div id="reponse-zone" style="display:none">
+          <div class="card">
+            <div class="card-title"><div class="dot"></div>Votre réponse</div>
+            <div id="choix-zone" class="choices"></div>
+            <div id="indice-container">
+              <div class="indice-box" id="indice-box"></div>
+              <button class="btn btn-secondary" onclick="demanderIndice()"
+                      id="btn-indice" style="margin-top:12px;font-size:13px">
+                💡 Demander un indice
+              </button>
+            </div>
+            <div style="margin-top:16px; display:flex; gap:10px">
+              <button class="btn btn-teal" onclick="validerReponse()" id="btn-valider" disabled>
+                ✅ Valider
+              </button>
+              <button class="btn btn-secondary" onclick="genererQuestion()">
+                🔄 Nouvelle question
+              </button>
+            </div>
+          </div>
+
+          <div class="feedback" id="feedback-zone">
+            <div class="feedback-title" id="fb-titre"></div>
+            <div class="feedback-regle" id="fb-regle"></div>
+            <div class="feedback-formule" id="fb-formule"></div>
+            <details open>
+              <summary style="cursor:pointer;font-size:13px;color:var(--gray);margin:8px 0">
+                📐 Preuve mathématique
+              </summary>
+              <div class="feedback-preuve" id="fb-preuve"></div>
+            </details>
+            <div class="feedback-conseil" id="fb-conseil" style="display:none"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────────────────
+           SECTION : ADAPTATIF
+      ───────────────────────────────────── -->
+      <section id="s-adaptatif" class="section">
+        <!-- Config session -->
+        <div id="adapt-config" class="card">
+          <div class="card-title"><div class="dot"></div>Configurer le parcours adaptatif</div>
+          <div class="form-grid">
+            <div class="form-row">
+              <label>Objectif</label>
+              <select id="adapt-objectif"></select>
+            </div>
+            <div class="form-row">
+              <label>Mode Bloom</label>
+              <select id="adapt-bloom">
+                <option value="comprehension">Compréhension</option>
+                <option value="analyse">Analyse</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label>Apprenant</label>
+              <input id="adapt-apprenant" readonly
+                     style="background:#f3f4f6;color:#6b7280;cursor:default" />
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="demarrerAdaptatif()">
+            🎯 Démarrer le parcours
+          </button>
+        </div>
+
+        <!-- Session en cours -->
+        <div id="adapt-session" style="display:none">
+          <div class="card" style="margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <strong>Session adaptative</strong>
+                <span id="adapt-niveau-badge" style="margin-left:10px"></span>
+              </div>
+              <div style="text-align:right;font-size:13px;color:var(--gray)">
+                Q<span id="adapt-qnum">1</span>
+                &nbsp;·&nbsp;
+                <span id="adapt-bonnes">0</span> ✅
+                &nbsp;
+                <span id="adapt-mauvaises">0</span> ❌
+              </div>
+            </div>
+            <div style="margin-top:10px">
+              <div class="progress-bar">
+                <div class="progress-fill" id="adapt-progress" style="width:0%"></div>
+              </div>
+            </div>
+            <div id="adapt-event-msg" style="display:none;margin-top:10px"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title"><div class="dot"></div>Question</div>
+            <div id="adapt-question-zone"></div>
+            <div id="adapt-choix-zone" class="choices" style="margin-top:14px"></div>
+            <div style="margin-top:14px;display:flex;gap:10px">
+              <button class="btn btn-teal" onclick="validerAdaptatif()" id="adapt-btn-valider" disabled>
+                ✅ Valider
+              </button>
+              <button class="btn btn-secondary" onclick="terminerAdaptatif()">
+                🏁 Terminer la session
+              </button>
+            </div>
+            <div class="feedback" id="adapt-feedback" style="margin-top:14px"></div>
+          </div>
+        </div>
+
+        <!-- Bilan -->
+        <div id="adapt-bilan" style="display:none">
+          <div class="card">
+            <div class="card-title"><div class="dot"></div>Bilan de session</div>
+            <div id="adapt-bilan-content"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────────────────
+           SECTION : EXAMEN
+      ───────────────────────────────────── -->
+      <section id="s-examen" class="section">
+        <!-- Config -->
+        <div id="exam-config" class="card">
+          <div class="card-title"><div class="dot"></div>Configurer l'examen</div>
+          <div class="form-row">
+            <label>Titre de l'examen</label>
+            <input id="exam-titre" value="Examen — Logique mathématique" />
+          </div>
+          <div class="form-grid">
+            <div class="form-row">
+              <label>Objectifs (plusieurs possibles)</label>
+              <select id="exam-objectifs" multiple size="5" style="height:auto"></select>
+            </div>
+            <div>
+              <div class="form-row">
+                <label>Mode Bloom</label>
+                <select id="exam-bloom">
+                  <option value="comprehension">Compréhension</option>
+                  <option value="analyse">Analyse</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label>Niveau</label>
+                <select id="exam-niveau">
+                  <option value="faible">Faible</option>
+                  <option value="moyen" selected>Moyen</option>
+                  <option value="eleve">Élevé</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label>Nombre de questions</label>
+                <input type="number" id="exam-nb" value="5" min="1" max="20" />
+              </div>
+              <div class="form-row">
+                <label>Apprenant</label>
+                <input id="exam-apprenant" readonly
+                       style="background:#f3f4f6;color:#6b7280;cursor:default" />
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="demarrerExamen()">📝 Démarrer l'examen</button>
+        </div>
+
+        <!-- Examen en cours -->
+        <div id="exam-session" style="display:none">
+          <div class="card" style="margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <strong id="exam-titre-display"></strong>
+              <div style="font-size:13px;color:var(--gray)">
+                Q<span id="exam-qnum">1</span>/<span id="exam-qtotal">?</span>
+              </div>
+            </div>
+            <div class="timer-bar" style="margin-top:10px">
+              <div class="timer-fill" id="exam-timer-fill" style="width:100%"></div>
+            </div>
+            <div class="timer-text">
+              Temps restant : <span id="exam-timer-text">—</span>s
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title"><div class="dot"></div>Question</div>
+            <div id="exam-question-zone"></div>
+            <div id="exam-choix-zone" class="choices" style="margin-top:14px"></div>
+            <div style="margin-top:14px">
+              <button class="btn btn-teal" onclick="validerExamen()" id="exam-btn-valider" disabled>
+                ✅ Valider et passer à la suivante
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bulletin -->
+        <div class="bulletin" id="bulletin">
+          <div class="bulletin-header">
+            <div style="font-size:14px;opacity:.7;margin-bottom:8px">Bulletin de résultats</div>
+            <div class="bulletin-note" id="bull-note">—/20</div>
+            <div id="bull-mention" style="font-size:18px;margin-top:6px"></div>
+          </div>
+          <div class="bulletin-body">
+            <div id="bull-appreciation" class="alert" style="margin-bottom:16px"></div>
+            <div class="grid-2">
+              <div>
+                <strong>Statistiques</strong>
+                <table style="margin-top:10px">
+                  <tr><td>Questions répondues</td><td id="bull-nb"></td></tr>
+                  <tr><td>Bonnes réponses</td><td id="bull-bonnes"></td></tr>
+                  <tr><td>Taux de réussite</td><td id="bull-taux"></td></tr>
+                  <tr><td>Score obtenu</td><td id="bull-score"></td></tr>
+                </table>
+              </div>
+              <div>
+                <strong>Par objectif</strong>
+                <div id="bull-objectifs" style="margin-top:10px"></div>
+              </div>
+            </div>
+            <div id="bull-reco" style="margin-top:16px"></div>
+            <button class="btn btn-primary" onclick="nouvelExamen()" style="margin-top:16px">
+              🔄 Nouvel examen
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────────────────
+           SECTION : HISTORIQUE
+      ───────────────────────────────────── -->
+      
+
+      <!-- ─────────────────────────────────────
+           SECTION : RAPPORT
+      ───────────────────────────────────── -->
+      <section id="s-rapport" class="section">
+        <div class="card">
+          <div class="card-title"><div class="dot"></div>Rapport d'erreurs</div>
+          <div style="display:flex;gap:10px;margin-bottom:16px">
+            <input id="rapport-apprenant" placeholder="Nom de l'apprenant (optionnel)" style="width:280px" />
+            <button class="btn btn-primary" onclick="chargerRapport()">📈 Générer le rapport</button>
+          </div>
+          <div id="rapport-zone">
+            <div class="alert alert-info">Cliquez sur "Générer le rapport" pour analyser les performances.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─────────────────────────────────────
+           SECTION : EXPORT
+      ───────────────────────────────────── -->
+      <section id="s-export" class="section">
+        <div class="card">
+          <div class="card-title"><div class="dot"></div>Exporter une fiche d'exercices</div>
+          <div class="form-grid">
+            <div class="form-row">
+              <label>Objectif</label>
+              <select id="exp-objectif"></select>
+            </div>
+            <div class="form-row">
+              <label>Mode Bloom</label>
+              <select id="exp-bloom">
+                <option value="comprehension">Compréhension</option>
+                <option value="analyse">Analyse</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label>Niveau</label>
+              <select id="exp-niveau">
+                <option value="faible">Faible</option>
+                <option value="moyen" selected>Moyen</option>
+                <option value="eleve">Élevé</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-row">
+              <label>Nombre de questions</label>
+              <input type="number" id="exp-nb" value="5" min="1" max="20" />
+            </div>
+            <div class="form-row">
+              <label>Titre de la fiche</label>
+              <input id="exp-titre" value="Fiche d'exercices — Logique mathématique" />
+            </div>
+            <div class="form-row">
+              <label>Nom de l'enseignant</label>
+              <input id="exp-enseignant" placeholder="Optionnel" />
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+            <input type="checkbox" id="exp-corrige" style="width:auto" />
+            <label for="exp-corrige" style="margin:0">Inclure le corrigé</label>
+          </div>
+          <div class="form-row" style="margin-top:8px">
+            <label>Format d'export</label>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
+              <button class="btn btn-primary" onclick="genererFiche('html')">
+                📄 HTML / PDF
+              </button>
+              <button class="btn btn-navy" onclick="genererFiche('json')">
+                { } JSON
+              </button>
+              <button class="btn btn-teal" onclick="genererFiche('csv')">
+                📊 CSV
+              </button>
+              <button class="btn btn-secondary" onclick="genererFiche('moodle')">
+                🎓 Moodle XML
+              </button>
+            </div>
+          </div>
+        </div>
+        <div id="export-preview" style="display:none">
+          <div class="card">
+            <div class="card-title"><div class="dot"></div>Aperçu</div>
+            <button class="btn btn-teal" onclick="imprimerFiche()" style="margin-bottom:14px">
+              🖨️ Imprimer / Sauvegarder en PDF
+            </button>
+            <iframe id="export-iframe"
+              style="width:100%;height:600px;border:1px solid #e5e7eb;border-radius:8px">
+            </iframe>
+          </div>
+        </div>
+      </section>
+
+    
+<!-- /content -->
+  
+</div><!-- /app -->
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════
+// URL API : automatique selon l'environnement
+const API = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost'
+  ? 'http://127.0.0.1:8000/api'
+  : window.location.origin + '/api';
+const LETTRES = ["A", "B", "C", "D"];
+
+// ── Auth state ───────────────────────────────────────────────
+let auth = {
+  token:   localStorage.getItem('rali_token')   || null,
+  user_id: localStorage.getItem('rali_user_id') || null,
+  role:    localStorage.getItem('rali_role')     || null,
+  nom:     localStorage.getItem('rali_nom')      || null,
+  prenom:  localStorage.getItem('rali_prenom')   || null,
+};
+
+// État global
+let state = {
+  objetifsMap:    {},
+  questionCourante: null,
+  choixSelectionne: null,
+  niveauIndice:     0,
+  adaptSessionId:   null,
+  adaptQuestion:    null,
+  adaptChoix:       null,
+  adaptQNum:        0,
+  examId:           null,
+  examQuestions:    [],
+  examQIndex:       0,
+  examChoix:        null,
+  examTimer:        null,
+  examTempsDebut:   null,
+  trackSessionId:   null,   // ID session tracking adaptatif
+  trackExamId:      null,   // ID session tracking examen
+};
+
+// ═══════════════════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════════════════
+async function api(method, path, body=null) {
+  const opts = { method, headers: {"Content-Type":"application/json"} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + path, opts);
+  if (!r.ok) { const e = await r.json(); throw new Error(e.detail || r.statusText); }
+  return r.json();
+}
+const $ = id => document.getElementById(id);
+
+function niveauBadge(niv) {
+  const cls = { faible:"niv-faible", moyen:"niv-moyen", eleve:"niv-eleve" };
+  const lab = { faible:"Faible", moyen:"Moyen", eleve:"Élevé" };
+  return `<span class="${cls[niv]||''}">${lab[niv]||niv}</span>`;
+}
+
+function showSection(id, navEl) {
+  // Masquer toutes les sections
+  document.querySelectorAll(".section").forEach(s => {
+    s.style.display = "none";
+    s.classList.remove("active");
+  });
+
+  // Chercher la section : d'abord avec le préfixe s-, puis l'id direct
+  let el = document.getElementById("s-" + id);
+  if (!el) el = document.getElementById(id);
+  if (el) {
+    el.style.display = "block";
+    el.classList.add("active");
+  }
+
+  // Mettre à jour la nav
+  document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
+  try {
+    if (navEl) navEl.classList.add("active");
+    else if (typeof event !== "undefined" && event && event.currentTarget)
+      event.currentTarget.classList.add("active");
+  } catch(e) {}
+
+  // Charger les données selon la section (un seul appel par section)
+  const titres = {
+    dashboard:"Tableau de bord", generer:"Générer une question",
+    adaptatif:"Parcours adaptatif", examen:"Mode examen",
+    historique:"Mon historique", rapport:"Rapport d'erreurs",
+    export:"Exporter une fiche",
+    "admin-stats":"Statistiques", "admin-apprenants":"Apprenants"
+  };
+  if ($("topbar-title")) $("topbar-title").textContent = titres[id] || id;
+
+  if (id === "dashboard")        chargerDashboard();
+  if (id === "historique")       chargerHistorique();
+  if (id === "rapport")          chargerRapport();
+  if (id === "admin-stats")      chargerTableauBordAdmin();
+  if (id === "admin-apprenants") chargerApprenants();
+}
+
+function melangerTableau(arr) {
+  const a = [...arr];
+  for (let i=a.length-1;i>0;i--) {
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+async function init() {
+  try {
+    const objectifs = await api("GET", "/objectifs");
+    console.log("[init] Objectifs reçus:", objectifs ? objectifs.length : 0);
+
+    if (!objectifs || objectifs.length === 0) {
+      console.warn("[init] Liste objectifs vide !");
+      return;
+    }
+
+    state.objetifsMap = {};
+    objectifs.forEach(o => {
+      state.objetifsMap[o.code] = o.nom;
+    });
+
+    // Remplir TOUS les selects d'objectifs
+    const selects = ["g-objectif", "adapt-objectif", "exam-objectifs",
+                     "exp-objectif", "hist-filtre"];
+
+    selects.forEach(sid => {
+      const el = document.getElementById(sid);
+      if (!el) return;
+
+      // Vider d'abord
+      if (sid === "hist-filtre")
+        el.innerHTML = '<option value="">Tous les objectifs</option>';
+      else
+        el.innerHTML = '<option value="">-- Choisir un objectif --</option>';
+
+      // Remplir
+      objectifs.forEach(o => {
+        const opt = document.createElement("option");
+        opt.value       = o.code;
+        opt.textContent = (sid === "exam-objectifs")
+          ? o.nom
+          : `${o.code} — ${o.nom}`;
+        el.appendChild(opt);
+      });
+
+      console.log(`[init] Select #${sid} rempli (${objectifs.length} options)`);
+    });
+
+  } catch(e) {
+    console.error("[init] Erreur chargement objectifs:", e);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════════════════════════════
+async function chargerDashboard() {
+  try {
+    const stats = await api("GET", "/statistiques");
+    // Anciens champs (compatibilité)
+    if ($("stat-total")) $("stat-total").textContent = stats.reponses?.total ?? stats.total_questions ?? 0;
+    if ($("stat-score")) $("stat-score").textContent = (stats.examens?.note_moyenne ?? stats.score_moyen ?? 0) + "/20";
+    if ($("stat-ert"))   $("stat-ert").textContent   = (stats.reponses?.ert_moyen ?? stats.ert_moyen ?? 0) + "s";
+  } catch(e) {
+    console.log("[dashboard] Stats non disponibles:", e.message);
+  }
+  try {
+    const obj = await api("GET", "/objectifs");
+    if (!obj || !obj.length) return;
+    const chapitres = {};
+    obj.forEach(o => {
+      if (!chapitres[o.chapitre]) chapitres[o.chapitre] = [];
+      chapitres[o.chapitre].push(o);
+    });
+    const el = $("dash-objectifs");
+    if (!el) return;
+    let html = "";
+    Object.entries(chapitres).forEach(([chap, objs]) => {
+      html += `<div style="margin-bottom:12px">
+        <div style="font-size:12px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">${chap}</div>`;
+      objs.forEach(o => {
+        html += `<div style="padding:4px 8px;font-size:13px;color:#374151">
+          <span style="font-family:monospace;background:#f3f4f6;padding:1px 5px;border-radius:3px;font-size:11px">${o.code}</span>
+          ${o.nom}</div>`;
+      });
+      html += `</div>`;
+    });
+    el.innerHTML = html;
+  } catch(e) {
+    console.log("[dashboard] Objectifs non disponibles:", e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// GÉNÉRER UNE QUESTION
+// ═══════════════════════════════════════════════════════════
+async function genererQuestion() {
+  const btn = $("btn-generer");
+  btn.innerHTML = '<span class="loader"></span> Génération...';
+  btn.disabled = true;
+  $("feedback-zone").classList.remove("show","correct","wrong");
+  $("indice-box").classList.remove("show");
+  $("indice-box").textContent = "";
+  $("btn-indice").style.display = "block";
+  $("btn-indice").disabled = false;
+  $("btn-indice").textContent = "💡 Demander un indice";
+  state.niveauIndice = 0;
+  state.choixSelectionne = null;
+  $("btn-valider").disabled = true;
+
+  try {
+    const q = await api("POST", "/generer", {
+      objectif_code:     $("g-objectif").value,
+      mode_bloom:        $("g-bloom").value,
+      niveau_complexite: $("g-niveau").value,
+      sauvegarder:       true,
+    });
+    state.questionCourante = q;
+
+    // Afficher l'énoncé
+    $("question-zone").innerHTML = `
+      <div class="question-box">
+        <div class="question-enonce">${q.enonce}</div>
+        <div class="meta-tags">
+          <span class="tag tag-bloom">${q.mode_bloom}</span>
+          ${niveauBadge(q.niveau_complexite)}
+          <span class="tag tag-ert">⏱ ERT : ${q.ert_secondes}s</span>
+          <span class="tag tag-score">Score : ${q.score_pedagogique}/10</span>
+        </div>
+      </div>`;
+
+    // Construire les choix
+    const distracteurs = Array.isArray(q.distracteurs)
+      ? q.distracteurs
+      : JSON.parse(q.distracteurs.replace(/'/g,'"'));
+    const choix = melangerTableau([q.reponse_correcte, ...distracteurs.slice(0,3)]);
+    let choixHtml = "";
+    choix.forEach((c,i) => {
+      choixHtml += `
+        <div class="choice" id="choice-${i}" onclick="selectionnerChoix(${i},'${c.replace(/'/g,"\\'")}')">
+          <div class="choice-letter">${LETTRES[i]}</div>
+          <div class="choice-text">${c}</div>
+        </div>`;
+    });
+    $("choix-zone").innerHTML = choixHtml;
+    $("reponse-zone").style.display = "block";
+    $("btn-indice").style.display = "block";
+    $("btn-indice").disabled = false;
+    $("btn-indice").textContent = "💡 Demander un indice";
+
+  } catch(e) {
+    $("question-zone").innerHTML = `<div class="alert alert-error">Erreur : ${e.message}</div>`;
+  } finally {
+    btn.innerHTML = "⚡ Générer";
+    btn.disabled = false;
+  }
+}
+
+function selectionnerChoix(idx, valeur) {
+  document.querySelectorAll(".choice").forEach(c=>c.classList.remove("selected"));
+  $("choice-"+idx).classList.add("selected");
+  state.choixSelectionne = valeur;
+  $("btn-valider").disabled = false;
+}
+
+async function validerReponse() {
+  if (!state.choixSelectionne || !state.questionCourante) return;
+  const q = state.questionCourante;
+
+  try {
+    const res = await api("POST", "/corriger", {
+      objectif_code:     q.objectif_code,
+      reponse_correcte:  q.reponse_correcte,
+      reponse_apprenant: state.choixSelectionne,
+      enonce:            q.enonce,
+      distracteurs:      q.distracteurs,
+    });
+
+    // Colorier les choix
+    document.querySelectorAll(".choice").forEach(el => {
+      const txt = el.querySelector(".choice-text").textContent;
+      if (txt === q.reponse_correcte) el.classList.add("correct");
+      else if (txt === state.choixSelectionne && !res.est_correct) el.classList.add("wrong");
+    });
+
+    // Feedback
+    const fb = $("feedback-zone");
+    fb.classList.add("show", res.est_correct ? "correct" : "wrong");
+    $("fb-titre").textContent  = res.message.split("\n")[0];
+    $("fb-regle").textContent  = "📏 Règle : " + res.regle;
+    $("fb-formule").textContent = res.formule;
+    $("fb-preuve").textContent  = res.preuve || "";
+    // Masquer la preuve si elle est vide
+    const detailsEl = $("fb-preuve").closest("details");
+    if (detailsEl) detailsEl.style.display = res.preuve ? "block" : "none";
+    if (res.conseil) {
+      $("fb-conseil").textContent = res.conseil;
+      $("fb-conseil").style.display = "block";
+    }
+
+    $("btn-valider").disabled = true;
+    $("btn-indice").style.display = "none";
+
+    // ── Enregistrer dans le tracking si connecté ──────────────
+    if (auth.token) {
+      console.log("[tracking] session_id=", state.trackSessionLibre,
+                  "objectif=", q.objectif_code);
+      try {
+        const tr = await apiAuth("POST", "/tracking/reponse_adaptative", {
+          session_id:        state.trackSessionLibre || null,
+          objectif_code:     q.objectif_code         || "GENERER",
+          mode_bloom:        q.mode_bloom             || "comprehension",
+          niveau_complexite: q.niveau_complexite      || "moyen",
+          enonce:            q.enonce                 || "",
+          reponse_apprenant: state.choixSelectionne   || "",
+          reponse_correcte:  q.reponse_correcte       || "",
+          est_correct:       res.est_correct,
+          ert_secondes:      q.ert_secondes            || 0,
+          score_question:    res.est_correct ? (q.score_pedagogique || 1) : 0,
+        });
+        console.log("[tracking] ✅ réponse enregistrée:", tr);
+      } catch(e) {
+        console.error("[tracking] ❌ erreur:", e.message);
+      }
+    } else {
+      console.warn("[tracking] non connecté - réponse non enregistrée");
+    }
+
+  } catch(e) { alert("Erreur : "+e.message); }
+}
+
+async function demanderIndice() {
+  if (!state.questionCourante) return;
+  state.niveauIndice = Math.min(state.niveauIndice + 1, 3);
+  try {
+    const r = await api("GET",
+      `/indice/${state.questionCourante.objectif_code}/${state.niveauIndice}`);
+    $("indice-box").textContent = r.indice;
+    $("indice-box").classList.add("show");
+    if (r.indices_restants === 0)
+      $("btn-indice").textContent = "💡 Plus d'indices disponibles";
+    if (r.avertissement)
+      $("btn-indice").disabled = true;
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════════
+// PARCOURS ADAPTATIF
+// ═══════════════════════════════════════════════════════════
+async function demarrerAdaptatif() {
+  try {
+    const session = await api("POST", "/adaptive/session", {
+      objectif_code: $("adapt-objectif").value,
+      mode_bloom:    $("adapt-bloom").value,
+      apprenant:     $("adapt-apprenant").value || "Apprenant",
+      niveau_depart: "faible",
+    });
+    state.adaptSessionId = session.session_id;
+    state.adaptQNum = 0;
+
+    // Créer aussi une session de tracking si connecté
+    state.trackSessionId = null;
+    if (auth.token) {
+      try {
+        const ts = await apiAuth("POST", "/tracking/session_adaptative", {
+          objectif_code: $("adapt-objectif").value,
+          mode_bloom:    $("adapt-bloom").value,
+          niveau_depart: "faible",
+        });
+        state.trackSessionId = ts.session_id;
+      } catch(e) { console.warn("Tracking session:", e.message); }
+    }
+
+    $("adapt-config").style.display = "none";
+    $("adapt-session").style.display = "block";
+    $("adapt-bilan").style.display = "none";
+    majNiveauAdaptatif(session.niveau_actuel, 0, 0);
+    await prochainQAdaptatif();
+  } catch(e) { alert("Erreur : "+e.message); }
+}
+
+async function prochainQAdaptatif() {
+  state.adaptChoix = null;
+  $("adapt-btn-valider").disabled = true;
+  $("adapt-feedback").classList.remove("show","correct","wrong");
+
+  const session = await api("GET", `/adaptive/historique/${state.adaptSessionId}`)
+    .catch(()=>[]);
+  const niveauActuel = $("adapt-niveau-badge").dataset.niveau || "faible";
+  const bloom = $("adapt-bloom").value;
+
+  try {
+    const q = await api("POST", "/generer", {
+      objectif_code:     $("adapt-objectif").value,
+      mode_bloom:        bloom,
+      niveau_complexite: niveauActuel,
+      sauvegarder:       false,
+    });
+    state.adaptQuestion = q;
+    state.adaptQNum++;
+    $("adapt-qnum").textContent = state.adaptQNum;
+
+    $("adapt-question-zone").innerHTML = `
+      <div class="question-box">
+        <p class="question-enonce">${q.enonce}</p>
+        <div class="meta-tags">
+          ${niveauBadge(q.niveau_complexite)}
+          <span class="tag tag-ert">⏱ ${q.ert_secondes}s</span>
+        </div>
+      </div>`;
+
+    const dist = Array.isArray(q.distracteurs) ? q.distracteurs
+      : JSON.parse(q.distracteurs.replace(/'/g,'"'));
+    const choix = melangerTableau([q.reponse_correcte, ...dist.slice(0,3)]);
+    let html = "";
+    choix.forEach((c,i) => {
+      html += `<div class="choice" id="adapt-choice-${i}"
+        onclick="selectionAdaptatif(${i},'${c.replace(/'/g,"\\'")}')">
+        <div class="choice-letter">${LETTRES[i]}</div>
+        <div class="choice-text">${c}</div>
+      </div>`;
+    });
+    $("adapt-choix-zone").innerHTML = html;
+  } catch(e) {
+    $("adapt-question-zone").innerHTML =
+      `<div class="alert alert-error">Erreur : ${e.message}</div>`;
+  }
+}
+
+function selectionAdaptatif(idx, val) {
+  document.querySelectorAll("[id^='adapt-choice-']").forEach(c=>c.classList.remove("selected"));
+  $("adapt-choice-"+idx).classList.add("selected");
+  state.adaptChoix = val;
+  $("adapt-btn-valider").disabled = false;
+}
+
+async function validerAdaptatif() {
+  if (!state.adaptChoix || !state.adaptQuestion) return;
+  const q = state.adaptQuestion;
+  const correct = state.adaptChoix.trim().toLowerCase()===q.reponse_correcte.trim().toLowerCase();
+
+  document.querySelectorAll("[id^='adapt-choice-']").forEach(el => {
+    const txt = el.querySelector(".choice-text").textContent;
+    if (txt === q.reponse_correcte) el.classList.add("correct");
+    else if (txt === state.adaptChoix && !correct) el.classList.add("wrong");
+  });
+
+  try {
+    const etat = await api("POST", "/adaptive/reponse", {
+      session_id:        state.adaptSessionId,
+      enonce:            q.enonce,
+      reponse_correcte:  q.reponse_correcte,
+      reponse_apprenant: state.adaptChoix,
+      est_correct:       correct,
+      ert_secondes:      q.ert_secondes,
+      score_question:    correct ? q.score_pedagogique : 0,
+    });
+
+    // Enregistrer aussi dans tracking si connecté
+    if (auth.token && state.trackSessionId) {
+      try {
+        await apiAuth("POST", "/tracking/reponse_adaptative", {
+          session_id:        state.trackSessionId,
+          objectif_code:     q.objectif_code,
+          mode_bloom:        q.mode_bloom || $("adapt-bloom").value,
+          niveau_complexite: q.niveau_complexite || "moyen",
+          enonce:            q.enonce,
+          reponse_apprenant: state.adaptChoix,
+          reponse_correcte:  q.reponse_correcte,
+          est_correct:       correct,
+          ert_secondes:      q.ert_secondes   || 0,
+          score_question:    correct ? (q.score_pedagogique || 0) : 0,
+        });
+      } catch(e) { console.warn("Tracking réponse:", e.message); }
+    }
+
+    // Feedback
+    const res = await api("POST", "/corriger", {
+      objectif_code:     q.objectif_code,
+      reponse_correcte:  q.reponse_correcte,
+      reponse_apprenant: state.adaptChoix,
+      enonce:            q.enonce,
+      distracteurs:      q.distracteurs,
+    });
+    const fb = $("adapt-feedback");
+    fb.innerHTML = `
+      <div class="feedback-title">${res.message.split("\n")[0]}</div>
+      <div class="feedback-regle">📏 ${res.regle}</div>
+      <div class="feedback-formule">${res.formule}</div>
+      ${res.conseil ? `<div class="feedback-conseil">${res.conseil}</div>` : ""}`;
+    fb.classList.add("show", correct ? "correct" : "wrong");
+
+    // ── Message montée / descente affiché séparément ──────────
+    const msgEl = $("adapt-event-msg");
+    if (etat.evenement !== "maintien") {
+      const cls = etat.evenement === "montee" ? "alert-success" : "alert-warn";
+      msgEl.innerHTML = `<div class="alert ${cls}" style="font-size:15px;font-weight:600">
+        ${etat.message}
+      </div>`;
+      msgEl.style.display = "block";
+    } else {
+      msgEl.style.display = "none";
+    }
+
+    // Mettre à jour l'UI
+    majNiveauAdaptatif(
+      etat.niveau_actuel,
+      etat.nb_bonnes,
+      etat.nb_mauvaises
+    );
+
+    $("adapt-btn-valider").disabled = true;
+
+    if (etat.evenement !== "maintien") {
+      // Afficher le modal de notification
+      afficherModalNiveau(etat.evenement, etat.message, etat.niveau_actuel);
+      // prochainQAdaptatif() sera appelé quand l'apprenant clique "Continuer"
+    } else {
+      // Passer directement à la question suivante après 2.5s
+      setTimeout(() => prochainQAdaptatif(), 2500);
+    }
+  } catch(e) { alert(e.message); }
+}
+
+function majNiveauAdaptatif(niveau, bonnes, mauvaises) {
+  const badge = $("adapt-niveau-badge");
+  badge.innerHTML = niveauBadge(niveau);
+  badge.dataset.niveau = niveau;
+  $("adapt-bonnes").textContent = bonnes;
+  $("adapt-mauvaises").textContent = mauvaises;
+  const total = bonnes + mauvaises;
+  const pct = total > 0 ? Math.round(bonnes/total*100) : 0;
+  $("adapt-progress").style.width = pct+"%";
+}
+
+async function terminerAdaptatif() {
+  if (!state.adaptSessionId) return;
+  try {
+    const bilan = await api("POST", `/adaptive/terminer/${state.adaptSessionId}`);
+
+    // Terminer aussi la session tracking si connecté
+    if (auth.token && state.trackSessionId) {
+      try {
+        const niveauFinal = bilan.niveau_actuel || document
+          .getElementById("adapt-niveau-badge")?.dataset?.niveau || "faible";
+        await apiAuth("POST", "/tracking/terminer_adaptative", {
+          session_id:   state.trackSessionId,
+          niveau_final: niveauFinal,
+        });
+        state.trackSessionId = null;
+      } catch(e) { console.warn("Tracking terminer:", e.message); }
+    }
+    $("adapt-session").style.display = "none";
+    $("adapt-bilan").style.display = "block";
+
+    let html = `
+      <div class="grid-2" style="margin-bottom:16px">
+        <div class="stat-card">
+          <div class="stat-icon">🎯</div>
+          <div class="stat-val">${bilan.taux_reussite}%</div>
+          <div class="stat-label">Taux de réussite</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">📊</div>
+          <div class="stat-val">${bilan.score_global}/10</div>
+          <div class="stat-label">Score global</div>
+        </div>
+      </div>
+      <div class="alert ${bilan.taux_reussite>=60?"alert-success":"alert-warn"}">
+        ${bilan.appreciation}
+      </div>
+      <div style="margin-top:16px">
+        <strong>Niveau final atteint :</strong> ${niveauBadge(bilan.niveau_final)}
+      </div>
+      <button class="btn btn-primary" onclick="resetAdaptatif()" style="margin-top:16px">
+        🔄 Nouveau parcours
+      </button>`;
+    $("adapt-bilan-content").innerHTML = html;
+  } catch(e) { alert(e.message); }
+}
+
+function resetAdaptatif() {
+  state.adaptSessionId = null;
+  $("adapt-config").style.display = "block";
+  $("adapt-session").style.display = "none";
+  $("adapt-bilan").style.display = "none";
+}
+
+// ═══════════════════════════════════════════════════════════
+// MODE EXAMEN
+// ═══════════════════════════════════════════════════════════
+async function demarrerExamen() {
+  const sel = $("exam-objectifs");
+  const objectifs = Array.from(sel.selectedOptions).map(o=>o.value);
+  if (!objectifs.length) { alert("Sélectionnez au moins un objectif."); return; }
+
+  try {
+    const examen = await api("POST", "/examen/creer", {
+      objectifs,
+      mode_bloom:   $("exam-bloom").value,
+      niveau:       $("exam-niveau").value,
+      nb_questions: parseInt($("exam-nb").value)||5,
+      apprenant:    $("exam-apprenant").value||"Apprenant",
+      titre:        $("exam-titre").value||"Examen RALI-DEM",
+    })
+
+    // Créer session tracking examen si connecté
+    state.trackExamId = null;
+    if (auth.token) {
+      try {
+        const te = await apiAuth("POST", "/tracking/session_examen", {
+          titre:           $("exam-titre").value||"Examen RALI-DEM",
+          objectifs_codes: objectifs,
+          mode_bloom:      $("exam-bloom").value,
+          niveau:          $("exam-niveau").value,
+        });
+        state.trackExamId = te.session_id;
+      } catch(e) { console.warn("Tracking exam session:", e.message); }
+    };
+    state.examId        = examen.examen_id;
+    state.examQuestions = examen.questions;
+    state.examQIndex    = 0;
+    state.examChoix     = null;
+
+    $("exam-config").style.display    = "none";
+    $("exam-session").style.display   = "block";
+    $("bulletin").classList.remove("show");
+    $("exam-titre-display").textContent = examen.titre;
+    $("exam-qtotal").textContent        = examen.nb_questions;
+
+    afficherQExamen();
+  } catch(e) { alert("Erreur : "+e.message); }
+}
+
+function afficherQExamen() {
+  const q = state.examQuestions[state.examQIndex];
+  if (!q) { terminerExamen(); return; }
+
+  $("exam-qnum").textContent = state.examQIndex + 1;
+  state.examChoix = null;
+  $("exam-btn-valider").disabled = true;
+
+  $("exam-question-zone").innerHTML = `
+    <div class="question-box">
+      <p class="question-enonce">${q.enonce}</p>
+      <div class="meta-tags">
+        ${niveauBadge(q.niveau_complexite||"moyen")}
+        <span class="tag tag-ert">⏱ ${q.ert_secondes}s</span>
+      </div>
+    </div>`;
+
+  const dist = Array.isArray(q.distracteurs) ? q.distracteurs
+    : JSON.parse(q.distracteurs.replace(/'/g,'"'));
+  const choix = melangerTableau([q.reponse_correcte, ...dist.slice(0,3)]);
+  let html = "";
+  choix.forEach((c,i) => {
+    html += `<div class="choice" id="exam-choice-${i}"
+      onclick="selectionExamen(${i},'${c.replace(/'/g,"\\'")}')">
+      <div class="choice-letter">${LETTRES[i]}</div>
+      <div class="choice-text">${c}</div>
+    </div>`;
+  });
+  $("exam-choix-zone").innerHTML = html;
+
+  // Timer
+  clearInterval(state.examTimer);
+  const duree = q.temps_accorde_s || q.ert_secondes * 1.5;
+  state.examTempsDebut = Date.now();
+  let restant = Math.ceil(duree);
+  $("exam-timer-text").textContent = restant;
+  $("exam-timer-fill").style.width = "100%";
+  $("exam-timer-fill").className = "timer-fill";
+
+  state.examTimer = setInterval(() => {
+    restant--;
+    const pct = Math.max(0, restant/duree*100);
+    $("exam-timer-fill").style.width = pct+"%";
+    $("exam-timer-text").textContent = Math.max(0, restant);
+    if (pct < 33) $("exam-timer-fill").className = "timer-fill danger";
+    else if (pct < 60) $("exam-timer-fill").className = "timer-fill warning";
+    if (restant <= 0) {
+      clearInterval(state.examTimer);
+      validerExamen(true);  // temps écoulé
+    }
+  }, 1000);
+}
+
+function selectionExamen(idx, val) {
+  document.querySelectorAll("[id^='exam-choice-']").forEach(c=>c.classList.remove("selected"));
+  $("exam-choice-"+idx).classList.add("selected");
+  state.examChoix = val;
+  $("exam-btn-valider").disabled = false;
+}
+
+async function validerExamen(timeout=false) {
+  clearInterval(state.examTimer);
+  const q   = state.examQuestions[state.examQIndex];
+  const rep = timeout ? "" : (state.examChoix || "");
+  const tr  = (Date.now() - state.examTempsDebut) / 1000;
+
+  try {
+    const q = state.examQuestions[state.examQIndex];
+    await api("POST", "/examen/repondre", {
+      examen_id:         state.examId,
+      numero_question:   state.examQIndex + 1,
+      reponse_apprenant: rep,
+      temps_reponse_s:   tr,
+    });
+
+    // Tracking réponse examen si connecté
+    if (auth.token && state.trackExamId && q) {
+      const correct = rep.trim().toLowerCase() === q.reponse_correcte.trim().toLowerCase();
+      try {
+        await apiAuth("POST", "/tracking/reponse_examen", {
+          session_examen_id: state.trackExamId,
+          objectif_code:     q.objectif_code   || "",
+          mode_bloom:        q.mode_bloom       || $("exam-bloom").value,
+          niveau_complexite: q.niveau_complexite|| "moyen",
+          enonce:            q.enonce           || "",
+          reponse_apprenant: rep,
+          reponse_correcte:  q.reponse_correcte || "",
+          est_correct:       correct,
+          ert_secondes:      q.ert_secondes     || 0,
+          score_question:    correct ? (q.score_pedagogique || 0) : 0,
+          temps_reponse_s:   tr,
+        });
+      } catch(e) { console.warn("Tracking exam réponse:", e.message); }
+    }
+
+    state.examQIndex++;
+    if (state.examQIndex >= state.examQuestions.length) {
+      terminerExamen();
+    } else {
+      afficherQExamen();
+    }
+  } catch(e) { alert(e.message); }
+}
+
+async function terminerExamen() {
+  $("exam-session").style.display = "none";
+  try {
+    // Terminer session tracking examen si connecté
+    if (auth.token && state.trackExamId) {
+      try {
+        await apiAuth("POST", `/tracking/terminer_examen/${state.trackExamId}`);
+        state.trackExamId = null;
+      } catch(e) { console.warn("Tracking terminer examen:", e.message); }
+    }
+
+    const b = await api("GET", `/examen/bulletin/${state.examId}`);
+    $("bull-note").textContent    = b.note_sur_20 + "/20";
+    $("bull-mention").textContent = b.mention;
+    $("bull-nb").textContent      = b.nb_repondues;
+    $("bull-bonnes").textContent  = b.nb_correctes;
+    $("bull-taux").textContent    = b.taux_reussite + "%";
+    $("bull-score").textContent   = b.score_obtenu + "/" + b.score_max;
+
+    const apprCls = b.note_sur_20>=14 ? "alert-success"
+                 : b.note_sur_20>=10 ? "alert-warn" : "alert-error";
+    $("bull-appreciation").className = "alert " + apprCls;
+    $("bull-appreciation").textContent = b.appreciation;
+
+    let objHtml = "";
+    for (const [code, stats] of Object.entries(b.par_objectif)) {
+      objHtml += `<div style="font-size:13px;padding:4px 0;
+        border-bottom:1px solid #f3f4f6;display:flex;
+        justify-content:space-between">
+        <span>${code}</span>
+        <span>${stats.taux}% ${stats.maitrise}</span>
+      </div>`;
+    }
+    $("bull-objectifs").innerHTML = objHtml;
+
+    if (b.recommandations && b.recommandations.length) {
+      $("bull-reco").innerHTML = `<strong>Recommandations :</strong>
+        <ul style="margin-top:8px;padding-left:20px;font-size:13px">
+          ${b.recommandations.map(r=>`<li>${r}</li>`).join("")}
+        </ul>`;
+    }
+    $("bulletin").classList.add("show");
+  } catch(e) { console.error(e); }
+}
+
+function nouvelExamen() {
+  $("exam-config").style.display = "block";
+  $("bulletin").classList.remove("show");
+  state.examId = null;
+}
+
+// ═══════════════════════════════════════════════════════════
+// HISTORIQUE
+// ═══════════════════════════════════════════════════════════
+async function chargerHistoriqueQuestions() {
+  const filtre = $("hist-filtre") ? $("hist-filtre").value : "";
+  const url = filtre ? `/questions?objectif_code=${filtre}&limit=50` : "/questions?limit=50";
+  try {
+    const qs = await api("GET", url);
+    afficherHistorique(qs);
+  } catch(e) { console.error(e); }
+}
+
+// ═══════════════════════════════════════════════════════════
+// RAPPORT D'ERREURS
+// ═══════════════════════════════════════════════════════════
+async function chargerRapport() {
+  const apprenant = $("rapport-apprenant") ? $("rapport-apprenant").value.trim() : "";
+  const url = apprenant
+    ? "/rapport_erreurs?apprenant=" + encodeURIComponent(apprenant)
+    : "/rapport_erreurs";
+
+  try {
+    const r = auth.token ? await apiAuth("GET", url) : await api("GET", url);
+    const resume = r.resume || {};
+    const stats  = r.stats_par_objectif || [];
+    const recs   = r.recommandations_globales || [];
+
+    // Résumé chiffres clés
+    var html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px">';
+    html += '<div class="card" style="text-align:center;padding:12px"><div style="font-size:24px;font-weight:800;color:#7c3aed">' + (resume.total_questions || 0) + '</div><div style="font-size:12px;color:#6b7280">Questions</div></div>';
+    html += '<div class="card" style="text-align:center;padding:12px"><div style="font-size:24px;font-weight:800;color:#10b981">' + (resume.taux_reussite || 0) + '%</div><div style="font-size:12px;color:#6b7280">Taux réussite</div></div>';
+    html += '<div class="card" style="text-align:center;padding:12px"><div style="font-size:24px;font-weight:800;color:#ef4444">' + (resume.nb_erreurs || 0) + '</div><div style="font-size:12px;color:#6b7280">Erreurs</div></div>';
+    html += '<div class="card" style="text-align:center;padding:12px"><div style="font-size:24px;font-weight:800;color:#f59e0b">' + (resume.score_moyen || 0) + '/10</div><div style="font-size:12px;color:#6b7280">Score moyen</div></div>';
+    html += '</div>';
+
+    // Objectifs
+    if (!stats.length) {
+      html += '<div style="padding:20px;text-align:center;color:#6b7280">Aucune donnée. Repondez a des questions pour voir votre rapport.</div>';
+    } else {
+      html += '<div style="font-weight:700;margin-bottom:12px">Resultats par objectif</div>';
+      for (var i = 0; i < stats.length; i++) {
+        var s = stats[i];
+        var pct = s.taux_reussite;
+        var col = pct >= 80 ? "#10b981" : pct >= 60 ? "#f59e0b" : "#ef4444";
+        html += '<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:10px">';
+        html += '<div style="display:flex;justify-content:space-between;margin-bottom:6px">';
+        html += '<strong>' + s.objectif_code + '</strong>';
+        html += '<span style="font-weight:700;color:' + col + '">' + pct + '%</span></div>';
+        html += '<div style="height:8px;background:#e5e7eb;border-radius:4px;margin-bottom:6px">';
+        html += '<div style="height:8px;border-radius:4px;width:' + pct + '%;background:' + col + '"></div></div>';
+        html += '<div style="font-size:12px;color:#6b7280">' + s.nb_correctes + '/' + s.nb_total + ' correctes';
+        html += ' · ERT: ' + s.ert_moyen + 's · ' + s.niveau_maitrise + '</div>';
+        if (s.recommandation) {
+          html += '<div style="margin-top:6px;font-size:12px;color:#7c3aed">&#x1F4A1; ' + s.recommandation + '</div>';
+        }
+        html += '</div>';
+      }
+    }
+
+    // Recommandations
+    if (recs.length) {
+      html += '<div style="font-weight:700;margin:16px 0 10px">Recommandations</div>';
+      for (var j = 0; j < recs.length; j++) {
+        html += '<div style="background:#faf5ff;border-left:3px solid #7c3aed;padding:10px;margin-bottom:8px;font-size:13px">' + recs[j] + '</div>';
+      }
+    }
+
+    var zone = $("rapport-zone") || $("rapport-contenu");
+    if (zone) zone.innerHTML = html;
+
+  } catch(e) {
+    console.error("[rapport]", e);
+    var zone = $("rapport-zone") || $("rapport-contenu");
+    if (zone) zone.innerHTML = '<div style="color:#ef4444;padding:16px">Erreur : ' + e.message + '</div>';
+  }
+}
+
+async function genererFiche(format = 'html') {
+  const nb = parseInt($("exp-nb").value)||5;
+  const questions = [];
+
+  // Génération des questions
+  for (let i=0; i<nb; i++) {
+    try {
+      const q = await api("POST", "/generer", {
+        objectif_code:     $("exp-objectif").value,
+        mode_bloom:        $("exp-bloom").value,
+        niveau_complexite: $("exp-niveau").value,
+        sauvegarder:       false,
+      });
+      questions.push(q);
+    } catch(e) {}
+  }
+
+  if (!questions.length) { alert("Impossible de générer les questions."); return; }
+
+  const params = {
+    questions,
+    titre:        $("exp-titre").value,
+    avec_corrige: $("exp-corrige").checked,
+    enseignant:   $("exp-enseignant").value,
+    niveau:       $("exp-niveau").value,
+    format:       format,
+  };
+
+  try {
+    if (format === 'html') {
+      // ── HTML : affichage dans iframe + impression ──────────
+      const r = await fetch(API+"/exporter", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(params),
+      });
+      const html = await r.text();
+      const blob = new Blob([html], {type:"text/html"});
+      const url  = URL.createObjectURL(blob);
+      $("export-iframe").src = url;
+      $("export-preview").style.display = "block";
+
+    } else {
+      // ── JSON, CSV, Moodle XML : téléchargement direct ──────
+      const types   = {
+        json:   "application/json",
+        csv:    "text/csv;charset=utf-8",
+        moodle: "application/xml",
+      };
+      const extens  = { json:".json", csv:".csv", moodle:".xml" };
+      const r = await fetch(API+`/exporter/${format}`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(params),
+      });
+      const texte = await r.text();
+      const blob  = new Blob([texte], {type: types[format]});
+      const url   = URL.createObjectURL(blob);
+      const a     = document.createElement("a");
+      const nom   = ($("exp-titre").value || "fiche_rali_dem")
+                    .replace(/[^a-z0-9]/gi,"_").toLowerCase()
+                    + extens[format];
+      a.href     = url;
+      a.download = nom;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      // Confirmation
+      const labels = {
+        json:   "JSON",
+        csv:    "CSV (Excel)",
+        moodle: "Moodle XML"
+      };
+      alert(`✅ Fiche exportée en ${labels[format]} !\nFichier : ${nom}`);
+    }
+  } catch(e) { alert("Erreur export : "+e.message); }
+}
+
+function imprimerFiche() {
+  $("export-iframe").contentWindow.print();
+}
+
+// ═══════════════════════════════════════════════════════════
+// DÉMARRAGE
+// ═══════════════════════════════════════════════════════════
+
+function afficherModalNiveau(evenement, message, niveauActuel) {
+  const icons = { montee: "🎉", descente: "💪" };
+  const modal = $("niveau-modal");
+  $("niveau-modal-icon").textContent = icons[evenement] || "ℹ️";
+  $("niveau-modal-msg").textContent  = message;
+  $("niveau-modal-niveau").textContent = "Nouveau niveau : " + 
+    (niveauActuel === "faible" ? "FAIBLE" : 
+     niveauActuel === "moyen"  ? "MOYEN"  : "ÉLEVÉ");
+  modal.style.display = "flex";
+}
+
+function fermerModalNiveau() {
+  $("niveau-modal").style.display = "none";
+  prochainQAdaptatif();
+}
+
+// ═════════════════════════════════════════════════════════════
+// AUTHENTIFICATION
+// ═════════════════════════════════════════════════════════════
+
+function _headersAuth() {
+  return {
+    "Content-Type": "application/json",
+    "Authorization": auth.token ? `Bearer ${auth.token}` : "",
+  };
+}
+
+async function apiAuth(method, route, body = null) {
+  const opts = { method, headers: _headersAuth() };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + route, opts);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || "Erreur serveur");
+  return data;
+}
+
+function _sauvegarderAuth(data) {
+  auth.token   = data.token;
+  auth.user_id = data.user_id;
+  auth.role    = data.role;
+  auth.nom     = data.nom;
+  auth.prenom  = data.prenom;
+  localStorage.setItem('rali_token',   data.token);
+  localStorage.setItem('rali_user_id', data.user_id);
+  localStorage.setItem('rali_role',    data.role);
+  localStorage.setItem('rali_nom',     data.nom);
+  localStorage.setItem('rali_prenom',  data.prenom);
+}
+
+function _effacerAuth() {
+  auth = { token: null, user_id: null, role: null, nom: null, prenom: null };
+  ['rali_token','rali_user_id','rali_role','rali_nom','rali_prenom']
+    .forEach(k => localStorage.removeItem(k));
+}
+
+function _mettreAJourNavAuth() {
+  const connecte = !!auth.token;
+  document.getElementById('nav-auth').style.display  = connecte ? 'none'  : 'block';
+  document.getElementById('nav-main').style.display  = connecte ? 'block' : 'none';
+  document.getElementById('nav-user-bar').style.display = connecte ? 'block' : 'none';
+
+  if (connecte) {
+    document.getElementById('nav-user-name').textContent =
+      `${auth.prenom} ${auth.nom}`;
+    document.getElementById('nav-user-role').textContent =
+      auth.role === 'administrateur' ? '⚙️ Administrateur'
+      : auth.role === 'enseignant'   ? '📖 Enseignant'
+      : '🎓 Apprenant';
+    // Afficher menu admin
+    console.log("[nav] role=", auth.role, "→ admin menu:", auth.role === 'administrateur');
+    var navAdmin = document.getElementById('nav-admin');
+    if (navAdmin) {
+      var showAdmin = (auth.role === 'administrateur');
+      navAdmin.style.removeProperty('display');
+      navAdmin.style.setProperty('display', showAdmin ? 'block' : 'none', 'important');
+      console.log("[nav] nav-admin setProperty display=", navAdmin.style.getPropertyValue('display'));
+    }
+
+    // Pré-remplir le nom de l'apprenant dans les formulaires
+    const nomComplet = `${auth.prenom} ${auth.nom}`;
+    const champsApprenant = ['adapt-apprenant', 'exam-apprenant'];
+    champsApprenant.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = nomComplet;
+    });
+  }
+}
+
+async function seConnecter() {
+  const email = document.getElementById('login-email').value.trim();
+  const mdp   = document.getElementById('login-mdp').value;
+  const errEl = document.getElementById('login-erreur');
+  errEl.style.display = 'none';
+
+  try {
+    const data = await apiAuth('POST', '/auth/connexion',
+                               { email, mot_de_passe: mdp });
+    console.log("[connexion] data reçue:", data.email, "role:", data.role);
+    _sauvegarderAuth(data);
+    console.log("[connexion] auth.role après save:", auth.role);
+    _mettreAJourNavAuth();
+    try { await init(); } catch(ei) { console.warn("[init] non bloquant:", ei.message); }
+    _creerSessionLibre();
+    showSection('dashboard');
+    if (auth.role === 'administrateur') chargerTableauBordAdmin();
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+async function sInscrire() {
+  const nom         = document.getElementById('ins-nom').value.trim();
+  const prenom      = document.getElementById('ins-prenom').value.trim();
+  const email       = document.getElementById('ins-email').value.trim();
+  const mdp         = document.getElementById('ins-mdp').value;
+  const niveau      = document.getElementById('ins-niveau').value;
+  const institution = document.getElementById('ins-institution').value.trim();
+  const errEl = document.getElementById('ins-erreur');
+  const okEl  = document.getElementById('ins-succes');
+  errEl.style.display = 'none';
+  okEl.style.display  = 'none';
+
+  if (!nom || !prenom || !email || !mdp || !niveau || !institution) {
+    errEl.textContent = "Tous les champs sont obligatoires.";
+    errEl.style.display = 'block';
+    return;
+  }
+
+  try {
+    const data = await apiAuth('POST', '/auth/inscription', {
+      nom, prenom, email, mot_de_passe: mdp, niveau, institution
+    });
+    _sauvegarderAuth(data);
+    _mettreAJourNavAuth();
+    try { await init(); } catch(ei) { console.warn("[init] non bloquant:", ei.message); }
+    _creerSessionLibre();
+    okEl.textContent = `✅ Compte créé ! Bienvenue, ${prenom} !`;
+    okEl.style.display = 'block';
+    setTimeout(() => showSection('dashboard'), 1500);
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+async function deconnecter() {
+  try {
+    await apiAuth('POST', '/auth/deconnexion');
+  } catch(e) {}
+  _effacerAuth();
+  _mettreAJourNavAuth();
+  showSection('login');
+}
+
+
+// ═════════════════════════════════════════════════════════════
+// HISTORIQUE APPRENANT
+// ═════════════════════════════════════════════════════════════
+
+async function chargerHistorique() {
+  if (!auth.token) { showSection('login'); return; }
+  try {
+    const hist = await apiAuth('GET', '/tracking/historique');
+    const r    = hist.resume;
+
+    // Résumé
+    document.getElementById('historique-resume').innerHTML = `
+      <div class="card" style="text-align:center">
+        <div style="font-size:28px;font-weight:800;color:#7c3aed">${r.taux_reussite_global}%</div>
+        <div style="color:#6b7280;font-size:13px">Taux de réussite</div>
+      </div>
+      <div class="card" style="text-align:center">
+        <div style="font-size:28px;font-weight:800;color:#10b981">${r.note_moyenne_examens}/20</div>
+        <div style="color:#6b7280;font-size:13px">Note moy. examens</div>
+      </div>
+      <div class="card" style="text-align:center">
+        <div style="font-size:28px;font-weight:800;color:#f59e0b">${r.total_sessions_adapt}</div>
+        <div style="color:#6b7280;font-size:13px">Sessions adaptatives</div>
+      </div>
+      <div class="card" style="text-align:center">
+        <div style="font-size:28px;font-weight:800;color:#3b82f6">${r.total_sessions_exam}</div>
+        <div style="color:#6b7280;font-size:13px">Examens passés</div>
+      </div>`;
+
+    // Sessions adaptatives
+    const adapt = hist.sessions_adaptatives || [];
+    console.log("[historique] Sessions adapt:", adapt.length);
+    document.getElementById('historique-adapt-list').innerHTML = adapt.length === 0
+      ? '<p style="color:#6b7280;padding:12px">Aucune session adaptative enregistrée. Faites un parcours adaptatif pour voir votre historique.</p>'
+      : adapt.map(s => `
+          <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <strong style="color:#7c3aed">${s.objectif_code}</strong>
+              <span style="color:#6b7280;font-size:12px">${(s.date_debut||'').slice(0,10)}</span>
+            </div>
+            <div style="margin-top:6px;font-size:13px;color:#374151">
+              ${s.nb_correctes}/${s.nb_questions} correctes ·
+              ERT moy : ${s.ert_moyen||0}s · Niveau : ${s.niveau_final||s.niveau_depart||'faible'}
+              ${s.terminee ? '' : ' · <em style="color:#f59e0b">En cours</em>'}
+            </div>
+            <div style="margin-top:6px">
+              <div style="height:6px;background:#e5e7eb;border-radius:3px">
+                <div style="height:6px;background:#7c3aed;border-radius:3px;width:${s.nb_questions?Math.round(s.nb_correctes/s.nb_questions*100):0}%"></div>
+              </div>
+            </div>
+          </div>`).join('');
+
+    // Examens
+    const exam = hist.sessions_examens;
+    document.getElementById('historique-exam-list').innerHTML = exam.length === 0
+      ? '<p style="color:#6b7280;padding:12px">Aucun examen.</p>'
+      : exam.map(e => `
+          <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style="font-weight:600">${e.titre}</div>
+              <div style="font-size:12px;color:#6b7280">${e.date_examen.slice(0,10)} · ${e.nb_correctes}/${e.nb_questions} correctes</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:22px;font-weight:800;color:${e.note_sur_20>=10?'#10b981':'#ef4444'}">${e.note_sur_20}/20</div>
+              <div style="font-size:11px;color:#6b7280">${e.mention}</div>
+            </div>
+          </div>`).join('');
+
+    // Par objectif
+    const parObj = hist.par_objectif || [];
+    console.log("[historique] Par objectif:", parObj.length);
+    document.getElementById('historique-objectifs-list').innerHTML = parObj.length === 0
+      ? '<p style="color:#6b7280;padding:12px">Aucune donnée par objectif. Effectuez des évaluations pour voir vos résultats.</p>'
+      : parObj.map(o => `
+          <div style="margin-bottom:12px">
+            <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+              <span><strong>${o.objectif_code}</strong></span>
+              <span style="font-weight:700;color:${o.taux_reussite>=70?'#10b981':o.taux_reussite>=40?'#f59e0b':'#ef4444'}">
+                ${o.taux_reussite}% (${o.correctes}/${o.total})
+              </span>
+            </div>
+            <div style="height:8px;background:#e5e7eb;border-radius:4px">
+              <div style="height:8px;border-radius:4px;width:${o.taux_reussite}%;background:${o.taux_reussite>=70?'#10b981':o.taux_reussite>=40?'#f59e0b':'#ef4444'}"></div>
+            </div>
+          </div>`).join('');
+
+  } catch(e) {
+    console.error('Erreur historique:', e);
+  }
+}
+
+
+// ═════════════════════════════════════════════════════════════
+// ADMIN — TABLEAU DE BORD
+// ═════════════════════════════════════════════════════════════
+
+async function chargerTableauBordAdmin() {
+  if (auth.role !== 'administrateur') return;
+  try {
+    const tb = await apiAuth('GET', '/stats/tableau_bord');
+    document.getElementById('tb-nb-apprenants').textContent = tb.apprenants.total;
+    document.getElementById('tb-taux').textContent = tb.reponses.taux_reussite + '%';
+    document.getElementById('tb-note').textContent = tb.examens.note_moyenne + '/20';
+    document.getElementById('tb-sessions').textContent = tb.sessions.total;
+    document.getElementById('tb-ert').textContent = tb.reponses.ert_moyen + 's';
+
+    // Objectifs
+    const objStats = await apiAuth('GET', '/stats/objectifs');
+    document.getElementById('admin-objectifs-list').innerHTML =
+      objStats.map(o => `
+        <div style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;font-size:13px">
+            <span><strong>${o.objectif_code}</strong> — ${o.nom}</span>
+            <span style="font-weight:700">${o.taux_reussite}% (${o.total} rép.)</span>
+          </div>
+          <div style="height:8px;background:#e5e7eb;border-radius:4px;margin-top:3px">
+            <div style="height:8px;border-radius:4px;width:${o.taux_reussite}%;background:${o.taux_reussite>=70?'#10b981':o.taux_reussite>=40?'#f59e0b':'#ef4444'}"></div>
+          </div>
+        </div>`).join('');
+  } catch(e) {
+    console.error('Erreur tableau bord admin:', e);
+  }
+}
+
+
+// ═════════════════════════════════════════════════════════════
+// ADMIN — APPRENANTS
+// ═════════════════════════════════════════════════════════════
+
+let _apprenants = [];
+
+async function chargerApprenants() {
+  if (auth.role !== 'administrateur') return;
+  try {
+    _apprenants = await apiAuth('GET', '/admin/utilisateurs');
+    afficherTableauApprenants(_apprenants);
+  } catch(e) {
+    console.error('Erreur chargement apprenants:', e);
+  }
+}
+
+function afficherTableauApprenants(liste) {
+  if (liste.length === 0) {
+    document.getElementById('admin-apprenants-table').innerHTML =
+      '<p style="color:#6b7280;padding:12px">Aucun utilisateur.</p>';
+    return;
+  }
+
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+  html += '<thead><tr style="background:#f3f4f6">';
+  html += '<th style="padding:10px;text-align:left">Nom</th>';
+  html += '<th style="padding:10px">Email</th>';
+  html += '<th style="padding:10px">Niveau</th>';
+  html += '<th style="padding:10px">Institution</th>';
+  html += '<th style="padding:10px">Rôle</th>';
+  html += '<th style="padding:10px">Statut</th>';
+  html += '<th style="padding:10px">Actions</th>';
+  html += '</tr></thead><tbody>';
+
+  for (var i = 0; i < liste.length; i++) {
+    var u = liste[i];
+    var roleColor = u.role === 'administrateur' ? '#7c3aed'
+                  : u.role === 'enseignant'      ? '#3b82f6'
+                  : '#6b7280';
+    var roleTextColor = u.role === 'apprenant' ? '#374151' : 'white';
+
+    html += '<tr style="border-bottom:1px solid #e5e7eb">';
+    html += '<td style="padding:10px;font-weight:500">' + u.prenom + ' ' + u.nom + '</td>';
+    html += '<td style="padding:10px;color:#6b7280;font-size:12px">' + u.email + '</td>';
+    html += '<td style="padding:10px;text-align:center">' + u.niveau + '</td>';
+    html += '<td style="padding:10px;font-size:11px">' + u.institution + '</td>';
+    html += '<td style="padding:10px;text-align:center">';
+    html += '<span style="padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;background:' + roleColor + ';color:' + roleTextColor + '">' + u.role + '</span>';
+    html += '</td>';
+    html += '<td style="padding:10px;text-align:center">';
+    html += '<span style="color:' + (u.actif ? '#10b981' : '#ef4444') + ';font-size:13px">';
+    html += (u.actif ? '✅ Actif' : '❌ Bloqué') + '</span>';
+    html += '</td>';
+
+    // Actions — pas d'action sur son propre compte
+    var estMoi = (u.id == auth.user_id);
+    html += '<td style="padding:10px">';
+    if (!estMoi) {
+      html += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
+
+      // Changer le rôle
+      html += '<select onchange="changerRole(' + u.id + ', this.value)" '
+            + 'style="padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:11px;cursor:pointer">';
+      html += '<option value="">-- Rôle --</option>';
+      html += '<option value="apprenant"'   + (u.role==='apprenant'      ? ' selected' : '') + '>Apprenant</option>';
+      html += '<option value="enseignant"'  + (u.role==='enseignant'     ? ' selected' : '') + '>Enseignant</option>';
+      html += '<option value="administrateur"' + (u.role==='administrateur' ? ' selected' : '') + '>Administrateur</option>';
+      html += '</select>';
+
+      // Activer / Bloquer
+      html += '<button onclick="toggleActif(' + u.id + ', ' + u.actif + ')" '
+            + 'style="padding:4px 8px;border:1px solid ' + (u.actif ? '#ef4444' : '#10b981') + ';'
+            + 'border-radius:6px;cursor:pointer;font-size:11px;'
+            + 'color:' + (u.actif ? '#ef4444' : '#10b981') + ';background:white">'
+            + (u.actif ? 'Bloquer' : 'Activer') + '</button>';
+
+      // Voir stats
+      html += '<button onclick="voirStatsApprenant(' + u.id + ')" '
+            + 'style="padding:4px 8px;border:1px solid #7c3aed;border-radius:6px;'
+            + 'cursor:pointer;font-size:11px;color:#7c3aed;background:white">📊 Stats</button>';
+
+      html += '</div>';
+    } else {
+      html += '<span style="color:#9ca3af;font-size:11px">Mon compte</span>';
+    }
+    html += '</td>';
+    html += '</tr>';
+  }
+
+  html += '</tbody></table>';
+  document.getElementById('admin-apprenants-table').innerHTML = html;
+}
+
+async function changerRole(userId, nouveauRole) {
+  if (!nouveauRole) return;
+  try {
+    await apiAuth('PUT', '/admin/utilisateurs/' + userId + '/role',
+                  { nouveau_role: nouveauRole });
+    await chargerApprenants();
+  } catch(e) {
+    alert('Erreur changement rôle : ' + e.message);
+    await chargerApprenants(); // Recharger pour remettre la valeur correcte
+  }
+}
+
+async function voirStatsApprenant(userId) {
+  var u = _apprenants.find(function(a){ return a.id == userId; });
+  var nom = u ? (u.prenom + ' ' + u.nom) : 'Apprenant #' + userId;
+  try {
+    const stats = await apiAuth('GET', '/stats/apprenant/' + userId);
+    const r = stats.resume;
+    alert(
+      'Statistiques de ' + nom + '\n\n' +
+      'Questions répondues : ' + (r.total_questions || 0) + '\n' +
+      'Taux de réussite    : ' + (r.taux_reussite || 0) + '%\n' +
+      'Examens passés      : ' + (r.nb_examens || 0) + '\n' +
+      'Note moyenne        : ' + (r.note_moy_examens || 0) + '/20'
+    );
+  } catch(e) {
+    alert('Impossible de charger les stats : ' + e.message);
+  }
+}
+
+function filtrerApprenants() {
+  const q = document.getElementById('admin-recherche').value.toLowerCase();
+  const filtre = _apprenants.filter(u =>
+    u.nom.toLowerCase().includes(q) ||
+    u.prenom.toLowerCase().includes(q) ||
+    u.email.toLowerCase().includes(q)
+  );
+  afficherTableauApprenants(filtre);
+}
+
+async function toggleActif(userId, actifActuel) {
+  try {
+    await apiAuth('PUT', `/admin/utilisateurs/${userId}/actif?actif=${actifActuel ? 0 : 1}`);
+    chargerApprenants();
+  } catch(e) {
+    alert('Erreur : ' + e.message);
+  }
+}
+
+
+// ═════════════════════════════════════════════════════════════
+// EXPORT STATISTIQUES (admin)
+// ═════════════════════════════════════════════════════════════
+
+async function exporterStats(format) {
+  try {
+    const types = {
+      json:      { route: '/stats/exporter/json',     mime: 'application/json', ext: '.json' },
+      objectifs: { route: '/stats/exporter/csv/objectifs', mime: 'text/csv',   ext: '_objectifs.csv' },
+      apprenants:{ route: '/stats/exporter/csv/apprenants',mime: 'text/csv',   ext: '_apprenants.csv' },
+      reponses:  { route: '/stats/exporter/csv/reponses', mime: 'text/csv',    ext: '_reponses.csv' },
+      spss:      { route: '/stats/exporter/spss',     mime: 'application/octet-stream', ext: '.sav' },
+    };
+    const t = types[format];
+    if (!t) return;
+
+    const r = await fetch(API + t.route, {
+      method: 'GET',
+      headers: _headersAuth(),
+    });
+    if (!r.ok) throw new Error('Erreur export');
+
+    const blob = await r.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `rali_dem_stats${t.ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Erreur export : ' + e.message);
+  }
+}
+
+
+// ═════════════════════════════════════════════════════════════
+// INIT — vérifier token au chargement
+// ═════════════════════════════════════════════════════════════
+
+document.addEventListener("DOMContentLoaded", async function() {
+  if (auth.token) {
+    try {
+      await apiAuth('GET', '/auth/profil');
+      _mettreAJourNavAuth();
+      try { await init(); } catch(ei) { console.warn("[init]:", ei.message); }
+      _creerSessionLibre();
+      showSection('dashboard');
+      if (auth.role === 'administrateur') chargerTableauBordAdmin();
+    } catch(e) {
+      _effacerAuth();
+      _mettreAJourNavAuth();
+      showSection('login');
+    }
+  } else {
+    _mettreAJourNavAuth();
+    showSection('login');
+  }
+});
+
+// Créer une session tracking "libre" pour les exercices individuels
+// Non-bloquante : s'exécute en arrière-plan sans bloquer la navigation
+function _creerSessionLibre() {
+  if (!auth.token) return;
+  state.trackSessionLibre = null;
+  apiAuth("POST", "/tracking/session_adaptative", {
+    objectif_code: "GENERER",
+    mode_bloom:    "comprehension",
+    niveau_depart: "faible",
+  }).then(ts => {
+    state.trackSessionLibre = ts.session_id;
+    console.log("[tracking] Session libre créée:", ts.session_id);
+  }).catch(e => {
+    console.warn("[tracking] Session libre (non bloquant):", e.message);
+  });
+}
+</script>
+
+<!-- Modal notification niveau adaptatif -->
+<div id="niveau-modal" style="
+  display:none; position:fixed; top:0; left:0; right:0; bottom:0;
+  background:rgba(0,0,0,0.5); z-index:9999;
+  align-items:center; justify-content:center;">
+  <div id="niveau-modal-box" style="
+    background:white; border-radius:16px; padding:40px;
+    text-align:center; max-width:420px; width:90%;
+    box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+    <div id="niveau-modal-icon" style="font-size:60px;margin-bottom:16px"></div>
+    <div id="niveau-modal-msg" style="font-size:17px;font-weight:600;line-height:1.5;color:#16213e"></div>
+    <div id="niveau-modal-niveau" style="margin-top:14px;font-size:13px;color:#6b7280"></div>
+    <button onclick="fermerModalNiveau()" style="
+      margin-top:20px; padding:10px 28px;
+      background:#16213e; color:white; border:none;
+      border-radius:8px; font-size:14px; cursor:pointer; font-weight:600">
+      Continuer →
+    </button>
+  </div>
+</div>
+
+
+
+<!-- ══════════════════════════════════════════════
+     SECTION LOGIN
+══════════════════════════════════════════════ -->
+<section id="s-login" class="section">
+  <div class="page-title">🔑 Connexion</div>
+  <div class="card" style="max-width:420px;margin:0 auto">
+    <div class="form-row">
+      <label>Email</label>
+      <input id="login-email" type="email" placeholder="votre@email.cm" />
+    </div>
+    <div class="form-row">
+      <label>Mot de passe</label>
+      <input id="login-mdp" type="password" placeholder="••••••••" />
+    </div>
+    <div id="login-erreur" style="color:#ef4444;font-size:13px;margin-bottom:10px;display:none"></div>
+    <button class="btn btn-primary" onclick="seConnecter()" style="width:100%">
+      🔑 Se connecter
+    </button>
+    <p style="text-align:center;margin-top:14px;font-size:13px;color:#6b7280">
+      Pas encore de compte ?
+      <a href="#" onclick="showSection('inscription', this)" style="color:#7c3aed">S'inscrire</a>
+    </p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     SECTION INSCRIPTION
+══════════════════════════════════════════════ -->
+<section id="s-inscription" class="section">
+  <div class="page-title">✏️ Créer un compte</div>
+  <div class="card" style="max-width:500px;margin:0 auto">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-row">
+        <label>Nom *</label>
+        <input id="ins-nom" placeholder="DUPONT" />
+      </div>
+      <div class="form-row">
+        <label>Prénom *</label>
+        <input id="ins-prenom" placeholder="Jean" />
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Email *</label>
+      <input id="ins-email" type="email" placeholder="jean@uy1.cm" />
+    </div>
+    <div class="form-row">
+      <label>Mot de passe * (6 caractères minimum)</label>
+      <input id="ins-mdp" type="password" placeholder="••••••••" />
+    </div>
+    <div class="form-row">
+      <label>Niveau *</label>
+      <select id="ins-niveau">
+        <option value="">-- Choisir --</option>
+        <option>L1</option><option>L2</option><option>L3</option>
+        <option>Master 1</option><option>Master 2</option>
+        <option>Doctorat</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>Institution *</label>
+      <input id="ins-institution" placeholder="Université de Yaoundé I" />
+    </div>
+    <div id="ins-erreur" style="color:#ef4444;font-size:13px;margin-bottom:10px;display:none"></div>
+    <div id="ins-succes" style="color:#10b981;font-size:13px;margin-bottom:10px;display:none"></div>
+    <button class="btn btn-primary" onclick="sInscrire()" style="width:100%">
+      ✏️ Créer mon compte
+    </button>
+    <p style="text-align:center;margin-top:14px;font-size:13px;color:#6b7280">
+      Déjà un compte ?
+      <a href="#" onclick="showSection('login', this)" style="color:#7c3aed">Se connecter</a>
+    </p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     SECTION ADMIN — STATISTIQUES
+══════════════════════════════════════════════ -->
+<section id="admin-stats" class="section">
+  <div class="page-title">🔬 Statistiques — Administration</div>
+
+  <!-- Tableau de bord global -->
+  <div id="admin-tb-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px">
+    <div class="card" style="text-align:center">
+      <div style="font-size:32px;font-weight:800;color:#7c3aed" id="tb-nb-apprenants">—</div>
+      <div style="color:#6b7280;font-size:13px">Apprenants inscrits</div>
+    </div>
+    <div class="card" style="text-align:center">
+      <div style="font-size:32px;font-weight:800;color:#10b981" id="tb-taux">—</div>
+      <div style="color:#6b7280;font-size:13px">Taux de réussite global</div>
+    </div>
+    <div class="card" style="text-align:center">
+      <div style="font-size:32px;font-weight:800;color:#f59e0b" id="tb-note">—</div>
+      <div style="color:#6b7280;font-size:13px">Note moyenne /20</div>
+    </div>
+    <div class="card" style="text-align:center">
+      <div style="font-size:32px;font-weight:800;color:#3b82f6" id="tb-sessions">—</div>
+      <div style="color:#6b7280;font-size:13px">Sessions totales</div>
+    </div>
+    <div class="card" style="text-align:center">
+      <div style="font-size:32px;font-weight:800;color:#ef4444" id="tb-ert">—</div>
+      <div style="color:#6b7280;font-size:13px">ERT moyen (s)</div>
+    </div>
+  </div>
+
+  <!-- Objectifs -->
+  <div class="card">
+    <div class="card-title"><div class="dot"></div>Taux de réussite par objectif</div>
+    <div id="admin-objectifs-list"></div>
+  </div>
+
+  <!-- Export -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-title"><div class="dot"></div>Exporter les statistiques</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="exporterStats('json')">{ } JSON complet</button>
+      <button class="btn btn-teal" onclick="exporterStats('objectifs')">📊 CSV objectifs</button>
+      <button class="btn btn-navy" onclick="exporterStats('apprenants')">👥 CSV apprenants</button>
+      <button class="btn btn-secondary" onclick="exporterStats('reponses')">📋 CSV réponses brutes</button>
+      <button class="btn" style="background:#8b5cf6;color:white" onclick="exporterStats('spss')">🔬 SPSS (.sav)</button>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     SECTION ADMIN — APPRENANTS
+══════════════════════════════════════════════ -->
+<section id="admin-apprenants" class="section">
+  <div class="page-title">👥 Gestion des apprenants</div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <input id="admin-recherche" placeholder="🔍 Rechercher par nom ou email..."
+             oninput="filtrerApprenants()"
+             style="width:300px;padding:8px 12px;border:1px solid #e5e7eb;border-radius:8px" />
+      <button class="btn btn-primary" onclick="chargerApprenants()">🔄 Actualiser</button>
+    </div>
+    <div id="admin-apprenants-table"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     SECTION MON HISTORIQUE (apprenant)
+══════════════════════════════════════════════ -->
+<section id="s-historique" class="section">
+  <div class="page-title">📚 Mon historique</div>
+  <div id="historique-resume" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:20px"></div>
+  <div class="card">
+    <div class="card-title"><div class="dot"></div>Sessions adaptatives</div>
+    <div id="historique-adapt-list"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="card-title"><div class="dot"></div>Examens passés</div>
+    <div id="historique-exam-list"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="card-title"><div class="dot"></div>Résultats par objectif</div>
+    <div id="historique-objectifs-list"></div>
+  </div>
+</main>
+</body>
+</html>
