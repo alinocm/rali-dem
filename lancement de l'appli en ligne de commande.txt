@@ -1,6 +1,0 @@
-D:\>cd RALI-DEM
-
-D:\RALI-DEM>python -m venv venv
-
-D:\RALI-DEM>venv\Scripts\activate
-(venv) D:\RALI-DEM>python backend/main.py \\ lancement du serveur
