@@ -522,11 +522,24 @@ def filtrer_distracteurs(candidats: list, n: int = 3) -> list:
     return selection[:n]
 
 
+# Pool VVER/TVER pour éviter les répétitions de combinaisons
+_vver_pool_global = []
+_tver_pool_global = []
+
 def reset_session():
     """Réinitialise la mémoire de session (hash + distracteurs)."""
-    global _historique_hash, _distracteurs_utilises
+    global _historique_hash, _distracteurs_utilises, _vver_pool_global, _tver_pool_global
     _historique_hash       = set()
     _distracteurs_utilises = []
+    # Réinitialiser les pools VVER et TVER
+    _vver_pool_global = [
+        (ck, vp, vq)
+        for ck in ["ET","OU","IMP","EQUIV"]
+        for vp,vq in [("V","V"),("V","F"),("F","V"),("F","F")]
+    ]
+    random.shuffle(_vver_pool_global)
+    _tver_pool_global = list(_vver_pool_global)
+    random.shuffle(_tver_pool_global)
 
 
 def get_taux_unicite() -> dict:
@@ -659,165 +672,150 @@ def _construire(g, code, bloom, niveau, params):
 # ═════════════════════════════════════════════════════════════
 
 def _prop(params, bloom):
-    """PROP — Identifier une proposition logique."""
+    """PROP — Identifier une proposition logique.
+    Varie les templates pour éviter la répétition d'énoncé.
+    """
     s, v, c = _svc()
     S = s.capitalize()
 
+    ENONCES_NON_PROP = [
+        f"Quelle heure est-il ?",
+        f"Ferme la porte !",
+        f"Puisse {s} {v} {c} !",
+        f"Si seulement {s} {v} {c}...",
+        f"Va étudier !",
+        f"Qu'il fait beau aujourd'hui !",
+    ]
+
     if bloom == "comprehension":
-        # Reconnaître directement un énoncé déclaratif
-        enonce  = "Laquelle des affirmations suivantes est une proposition logique ?"
-        reponse = f"{S} {v} {c}"
+        # Varier le template de la question
+        tmpl = random.randint(1, 4)
+        _templates_prop = [
+            f"Parmi les phrases suivantes, laquelle EST une proposition logique ?",
+            f"Un seul de ces énoncés peut être qualifié de Vrai ou Faux. Lequel ?",
+            f"Identifiez la proposition logique parmi ces énoncés :",
+            f"Quelle phrase possède une valeur de vérité (Vraie ou Fausse) ?",
+            f"Laquelle de ces phrases peut être vraie ou fausse ?",
+            f"Repérez la proposition logique : quel énoncé peut être évalué V ou F ?",
+        ]
+        # Intégrer la vraie proposition dans l'énoncé pour le rendre unique
+        _reponse_courte = f"{S} {v} {c}"
+        _templates_prop_avec_p = [
+            f"Concernant {s} : parmi ces phrases, laquelle est une proposition logique ?",
+            f"Un seul énoncé (celui sur {s}) peut être Vrai ou Faux. Lequel ?",
+            f"{S} est mentionné dans une proposition logique. Laquelle ?",
+            f"Parmi ces énoncés incluant une phrase sur {s}, quelle est la proposition ?",
+            f"Cherchez la proposition : quel énoncé (sur {s} ?) peut être V ou F ?",
+            f"L'énoncé sur {s} — est-il une proposition ? Et parmi ces options, laquelle l'est ?",
+        ]
+        _prop_idx = hash(s + v + c) % len(_templates_prop_avec_p)
+        enonce = _templates_prop_avec_p[_prop_idx]
 
-        # Pool dynamique : générer des non-propositions variées
-        # Ordres (impératifs) — 10 variants
-        ordres = [
-            "Ferme la porte !", "Tais-toi immédiatement !",
-            "Ouvre ce livre maintenant !", "Rends ce devoir demain !",
-            "Viens ici tout de suite !", "Lis ce texte attentivement !",
-            "Réponds à cette question !", "Pose ce problème correctement !",
-            "Apprends cette règle par cœur !", "Travaille davantage !",
-        ]
-        # Questions — 10 variants
-        questions = [
-            "Est-ce que tu viens demain ?",
-            "Où est passé ce résultat ?",
-            "Pourquoi a-t-il échoué à cet examen ?",
-            "Quand aura lieu la prochaine séance ?",
-            "Qui a résolu ce problème ?",
-            "Comment fonctionne ce principe ?",
-            "Combien de questions reste-t-il ?",
-            "Lequel de ces arguments est valide ?",
-            "Qu'est-ce qui justifie ce résultat ?",
-            "À quoi sert cette règle ?",
-        ]
-        # Énoncés ambigus — 10 variants
-        ambigus = [
-            "Peut-être qu'il viendra un jour",
-            "Il est possible que ce cours soit intéressant",
-            "On ne sait pas si ce résultat est fiable",
-            "Ce serait bien de comprendre cette règle",
-            "Il faudrait peut-être revoir ce principe",
-            "Ce concept est difficile à saisir",
-            "On pourrait peut-être changer d'approche",
-            "Il semblerait que cette méthode soit utile",
-            "Ce problème mériterait plus d'attention",
-            "Cette règle est parfois complexe",
-        ]
-        # Choisir aléatoirement 1 de chaque catégorie + autres
-        candidats = ordres + questions + ambigus
-        random.shuffle(candidats)
-        dist = candidats  # pool de 30, filtré dans _construire
+        reponse = f"{S} {v} {c}."
+        non_prop = random.sample(ENONCES_NON_PROP, 3)
+        dist = non_prop
     else:
-        # Analyser POURQUOI un énoncé est ou n'est pas une proposition
-        enonce  = (
-            f"On considère l'affirmation : « {S} {v} {c} ».\n"
-            f"Pourquoi cet énoncé est-il une proposition logique ?"
-        )
-        reponse = "Parce qu'on peut lui attribuer une valeur de vérité (Vraie ou Fausse)"
-        dist    = [
-            # Erreur 1 : confondre proposition avec phrase grammaticale
-            "Parce qu'il contient un sujet et un verbe — critère grammatical, pas logique",
-            # Erreur 2 : confondre vérité logique avec certitude subjective
-            "Parce qu'il est affirmé avec certitude par celui qui parle",
-            # Erreur 3 : confondre proposition avec fait observable
-            "Parce qu'il décrit un fait vérifiable expérimentalement",
-            # Erreur 4 : confondre proposition avec opinion
-            "Parce qu'il exprime l'opinion de l'auteur sur un sujet",
-            # Erreur 5 : critère de vérité pratique (≠ logique)
-            "Parce qu'il est reconnu comme vrai par la majorité",
-            # Erreur 6 : confondre avec une définition
-            "Parce qu'il donne une définition précise d'un concept",
-            # Erreur 7 : critère d'autorité
-            "Parce qu'il est énoncé par un expert du domaine",
-        ]
+        tmpl = random.randint(1, 3)
+        if tmpl == 1:
+            enonce = f"Pourquoi « {S} {v} {c} » est-elle une proposition logique ?"
+            reponse = f"Parce qu'on peut déterminer si elle est Vraie ou Fausse."
+            dist = [
+                "Parce qu'elle contient un verbe d'action.",
+                "Parce qu'elle parle d'une personne réelle.",
+                "Parce qu'elle est grammaticalement correcte.",
+            ]
+        elif tmpl == 2:
+            non_prop = random.choice(ENONCES_NON_PROP)
+            enonce = f"Parmi « {S} {v} {c} » et « {non_prop} », laquelle est une proposition ?"
+            reponse = f"« {S} {v} {c} » — on peut établir sa valeur de vérité."
+            dist = [
+                f"« {non_prop} » — elle exprime une idée claire.",
+                "Les deux — tout énoncé en français est une proposition.",
+                f"Ni l'une ni l'autre — elles sont trop courtes.",
+            ]
+        else:
+            enonce = f"Laquelle de ces phrases N'EST PAS une proposition logique ?"
+            non_prop = random.choice(ENONCES_NON_PROP)
+            reponse = non_prop
+            autres = [f"{S} {v} {c}.",
+                      f"La Terre tourne autour du Soleil.",
+                      f"2 + 2 = 4."]
+            dist = random.sample(autres, 3)
 
-    meta = {"nb_propositions":1,"nb_connecteurs":0,
-            "nb_negations":0,"profondeur_logique":0}
-    return enonce, reponse, random.sample(dist,min(3,len(dist))), meta
+    random.shuffle(dist)
+    meta = {"nb_propositions":1,"nb_connecteurs":0,"nb_negations":0,"profondeur_logique":0}
+    return enonce, reponse, dist[:3], meta
 
 
 def _vver(params, bloom):
-    """VVER — Valeur de vérité d'une proposition composée.
-    Réponse binaire : Vraie ou Fausse uniquement (2 options).
+    """VVER — Valeur de vérité. Réponse binaire : Vraie/Fausse.
+    Varie le connecteur ET le cas pour éviter les répétitions.
     """
-    conn_key = random.choice(["ET","OU","IMP"])
-    conn     = CONNECTEURS[conn_key]
-    vp, vq   = random.choice([("V","V"),("V","F"),("F","V"),("F","F")])
+    # Varier les connecteurs pour plus de diversité
+    global _vver_pool_global
+    if not _vver_pool_global:
+        _vver_pool_global = [
+            (ck, vp, vq)
+            for ck in ["ET","OU","IMP","EQUIV"]
+            for vp,vq in [("V","V"),("V","F"),("F","V"),("F","F")]
+        ]
+        random.shuffle(_vver_pool_global)
+    conn_key, vp, vq = _vver_pool_global.pop()
+    conn = CONNECTEURS[conn_key]
     res      = TABLES[conn["formel"]][(vp,vq)]
     rep_txt  = "Vraie" if res=="V" else "Fausse"
     vp_txt   = "Vraie" if vp=="V" else "Fausse"
     vq_txt   = "Vraie" if vq=="V" else "Fausse"
     autre    = "Fausse" if rep_txt=="Vraie" else "Vraie"
 
-    if bloom == "comprehension":
-        enonce = (
-            f"Si P est {vp_txt} et Q est {vq_txt}, "
-            f"quelle est la valeur de « P {conn['formel']} Q » ?"
-        )
-        dist = [autre]
-    else:
-        # Analyser : identifier le cas et justifier
-        s1,v1,c1 = _svc()
-        s2,v2,c2 = _svc2(s1)
-        p = f"{s1.capitalize()} {v1} {c1}"
-        q = f"{_min(s2)} {v2} {c2}"
-        enonce = (
-            f"La proposition « {p} » est {vp_txt.lower()} "
-            f"et « {q} » est {vq_txt.lower()}.\n"
-            f"En appliquant la définition de {conn['formel']}, "
-            f"quelle est la valeur de « P {conn['formel']} Q » ?"
-        )
-        dist = [autre]
+    # 6 templates avec P/Q dès le début
+    _vver_t = [
+        f"Si P={vp_txt} et Q={vq_txt}, valeur de « P {conn['formel']} Q » ?",
+        f"P={vp_txt}, Q={vq_txt} → « P {conn['formel']} Q » = ?",
+        f"« P {conn['formel']} Q » vaut combien pour P={vp_txt}, Q={vq_txt} ?",
+        f"Évaluez « P {conn['formel']} Q » avec P={vp_txt} et Q={vq_txt}.",
+        f"P {conn['formel']} Q, P={vp_txt}, Q={vq_txt} : Vrai ou Faux ?",
+        f"Calculez « P {conn['formel']} Q » quand P={vp_txt} et Q={vq_txt}.",
+    ]
+    enonce = random.choice(_vver_t)
 
-    meta = {"nb_propositions":2,"nb_connecteurs":1,
-            "nb_negations":0,"profondeur_logique":1}
+    dist = [autre]
+    meta = {"nb_propositions":2,"nb_connecteurs":1,"nb_negations":0,"profondeur_logique":1}
     return enonce, rep_txt, dist, meta
 
 
 def _tver(params, bloom):
-    """TVER — Table de vérité.
-    Réponse binaire : Vraie ou Fausse uniquement (2 options).
+    """TVER — Table de vérité. Réponse binaire : Vraie/Fausse.
+    Varie le connecteur ET le template.
     """
-    conn_key = random.choice(["ET","OU","IMP","EQUIV"])
-    conn     = CONNECTEURS[conn_key]
-    vp, vq   = random.choice([("V","V"),("V","F"),("F","V"),("F","F")])
+    global _vver_pool_global
+    if not _vver_pool_global:
+        _vver_pool_global = [
+            (ck, vp, vq)
+            for ck in ["ET","OU","IMP","EQUIV"]
+            for vp,vq in [("V","V"),("V","F"),("F","V"),("F","F")]
+        ]
+        random.shuffle(_vver_pool_global)
+    conn_key, vp, vq = _vver_pool_global.pop()
+    conn = CONNECTEURS[conn_key]
     res      = TABLES[conn["formel"]][(vp,vq)]
     rep_txt  = "Vraie" if res=="V" else "Fausse"
     vp_txt   = "Vraie" if vp=="V" else "Fausse"
     vq_txt   = "Vraie" if vq=="V" else "Fausse"
     autre    = "Fausse" if rep_txt=="Vraie" else "Vraie"
 
-    if bloom == "comprehension":
-        enonce = (
-            f"Dans la table de vérité de « P {conn['formel']} Q », "
-            f"quelle est la valeur quand P est {vp_txt} et Q est {vq_txt} ?"
-        )
-        dist = [autre]
-    else:
-        # Identifier le(s) cas où la formule est FAUSSE
-        cas_faux = {
-            "∧": "quand P est Vraie et Q est Fausse, "
-                 "ou quand P est Fausse (quel que soit Q)",
-            "∨": "uniquement quand P est Fausse et Q est Fausse",
-            "⇒": "uniquement quand P est Vraie et Q est Fausse",
-            "⇔": "quand P et Q ont des valeurs différentes",
-        }
-        cas_vrai = {
-            "∧": "uniquement quand P est Vraie et Q est Vraie",
-            "∨": "quand au moins l'une des deux propositions est Vraie",
-            "⇒": "dans tous les cas sauf P=Vraie et Q=Fausse",
-            "⇔": "quand P et Q ont la même valeur de vérité",
-        }
-        enonce = (
-            f"Dans la table de vérité de « P {conn['formel']} Q », "
-            f"quelle est la valeur quand P est {vp_txt} et Q est {vq_txt} ?\n"
-            f"Rappel : « P {conn['formel']} Q » est {autre.lower()} "
-            f"{cas_faux[conn['formel']] if autre=='Fausse' else cas_vrai[conn['formel']]}."
-        )
-        dist = [autre]
+    _tver_t = [
+        f"Table de « P {conn['formel']} Q » : valeur pour P={vp_txt}, Q={vq_txt} ?",
+        f"P={vp_txt}, Q={vq_txt} → ligne de « P {conn['formel']} Q » dans la table ?",
+        f"Complétez : « P {conn['formel']} Q » = ? (P={vp_txt}, Q={vq_txt})",
+        f"Dans la table de « P {conn['formel']} Q », P={vp_txt} et Q={vq_txt} donnent ?",
+        f"« P {conn['formel']} Q » vaut quoi si P={vp_txt} et Q={vq_txt} ?",
+        f"Évaluez « P {conn['formel']} Q » : P={vp_txt}, Q={vq_txt}.",
+    ]
+    enonce = random.choice(_tver_t)
 
-    meta = {"nb_propositions":2,"nb_connecteurs":1,
-            "nb_negations":0,"profondeur_logique":1}
+    dist = [autre]
+    meta = {"nb_propositions":2,"nb_connecteurs":1,"nb_negations":0,"profondeur_logique":1}
     return enonce, rep_txt, dist, meta
 
 
@@ -871,136 +869,167 @@ def _neg_simple(params, bloom):
 
 
 def _conn_id(params, bloom):
-    """CONN_ID — Identifier les connecteurs logiques."""
+    """CONN_ID — Identifier les connecteurs logiques.
+    Varie le template pour éviter l'énoncé répétitif.
+    """
     conn_key = random.choice(["ET","OU","IMP","EQUIV"])
     conn     = CONNECTEURS[conn_key]
     s1,v1,c1 = _svc()
     s2,v2,c2 = _svc2(s1)
-    p = f"{_min(s1)} {v1} {c1}"
-    q = f"{_min(s2)} {v2} {c2}"
+    S1 = s1.capitalize()
+    p  = f"{S1} {v1} {c1}"
+    q  = f"{_min(s2)} {v2} {c2}"
 
-    if conn_key == "IMP":
-        phrase = f"Si {p}, alors {q}"
-    elif conn_key == "EQUIV":
-        phrase = f"{p} si et seulement si {q}"
-    else:
-        phrase = f"{p} {conn['ln']} {q}"
+    # Construire la phrase selon le connecteur
+    phrases = {
+        "ET":    f"{p} et {q}.",
+        "OU":    f"{p} ou {q}.",
+        "IMP":   f"Si {_min(p)}, alors {q}.",
+        "EQUIV": f"{p} si et seulement si {q}.",
+    }
+    phrase = phrases[conn_key]
+
+    reponse = conn["formel"]
+
+    # Distracteurs : les 3 autres connecteurs
+    autres = [c["formel"] for k,c in CONNECTEURS.items() if k != conn_key]
+    random.shuffle(autres)
+    dist = autres[:3]
 
     if bloom == "comprehension":
-        # Identifier le symbole du connecteur
-        enonce  = f"Quel connecteur logique est utilisé dans : « {phrase} » ?"
-        reponse = conn["formel"]
-        dist    = [c["formel"] for k,c in CONNECTEURS.items() if k!=conn_key]
+        # Varier le template
+        tmpl = random.randint(0, 5)
+        if tmpl == 0:
+            enonce = f"Quel connecteur logique est utilisé dans : « {phrase} » ?"
+        elif tmpl == 2:
+            enonce = f"Identifiez le connecteur logique de la proposition : « {phrase} »"
+        elif tmpl == 3:
+            enonce = f"Quelle est la traduction formelle du lien logique dans : « {phrase} » ?"
+        else:
+            enonce = f"Dans « {phrase} », quel symbole logique relie P et Q ?"
     else:
-        # Identifier le connecteur ET expliquer son rôle
         enonce = (
-            f"Dans la proposition : « {phrase} »,\n"
-            f"quel est le connecteur principal et quel est son rôle ?"
+            f"La phrase « {phrase} » utilise un connecteur logique. "
+            f"Lequel, et que signifie-t-il formellement ?"
         )
-        roles = {
-            "ET":    f"{conn['formel']} (ET) — relie deux conditions toutes deux nécessaires",
-            "OU":    f"{conn['formel']} (OU) — au moins l'une des deux conditions suffit",
-            "IMP":   f"{conn['formel']} (SI...ALORS) — exprime qu'une condition entraîne une conséquence",
-            "EQUIV": f"{conn['formel']} (SI ET SEULEMENT SI) — les deux propositions sont vraies simultanément",
-        }
-        reponse = roles[conn_key]
-        dist = [roles[k] for k in roles if k!=conn_key]
+        reponse = f"{conn['formel']} ({conn_key})"
+        dist = [
+            f"∧ (ET) — les deux doivent être vraies",
+            f"∨ (OU) — au moins une est vraie",
+            f"⇒ (SI...ALORS) — implication",
+        ]
+        dist = [d for d in dist if not d.startswith(conn['formel'])][:3]
 
     random.shuffle(dist)
-    meta = {"nb_propositions":1,"nb_connecteurs":1,
-            "nb_negations":0,"profondeur_logique":0}
+    meta = {"nb_propositions":2,"nb_connecteurs":1,"nb_negations":0,"profondeur_logique":0}
     return enonce, reponse, dist[:3], meta
 
 
 def _conn_trad(params, bloom):
-    """CONN_TRAD — Traduction LN → formel."""
-    conn_key = random.choice(["ET","OU","IMP"])
+    """CONN_TRAD — Traduction LN → formel.
+    Varie le connecteur ET le template d'énoncé.
+    """
+    conn_key = random.choice(["ET","OU","IMP","EQUIV"])
     conn     = CONNECTEURS[conn_key]
     s1,v1,c1 = _svc()
     s2,v2,c2 = _svc2(s1)
-    p = f"{_min(s1)} {v1} {c1}"
-    q = f"{_min(s2)} {v2} {c2}"
+    S1 = s1.capitalize()
+    p_var = "P"
+    q_var = "Q"
 
-    if conn_key == "IMP":
-        phrase = f"Si {p}, alors {q}"
-    else:
-        phrase = f"{p} {conn['ln']} {q}"
+    # Phrase en langage naturel selon le connecteur
+    phrases_ln = {
+        "ET":    f"{S1} {v1} {c1} et {_min(s2)} {v2} {c2}.",
+        "OU":    f"{S1} {v1} {c1} ou {_min(s2)} {v2} {c2}.",
+        "IMP":   f"Si {_min(s1)} {v1} {c1}, alors {_min(s2)} {v2} {c2}.",
+        "EQUIV": f"{S1} {v1} {c1} si et seulement si {_min(s2)} {v2} {c2}.",
+    }
+    phrase = phrases_ln[conn_key]
+    reponse = f"P {conn['formel']} Q"
+
+    autres_conn = [c for k,c in CONNECTEURS.items() if k != conn_key]
+    random.shuffle(autres_conn)
+    dist = [f"P {c['formel']} Q" for c in autres_conn[:3]]
 
     if bloom == "comprehension":
-        # Traduire directement une phrase en formule
-        enonce  = f"Quelle formule logique correspond à : « {phrase} » ?"
-        reponse = f"P {conn['formel']} Q"
-        dist    = [f"P {c} Q" for c in ["∧","∨","⇒","⇔"] if c!=conn["formel"]]
+        tmpl = random.randint(0, 5)
+        if tmpl == 0:
+            enonce = f"Quelle formule logique correspond à : « {phrase} » ?"
+        elif tmpl == 2:
+            enonce = f"Traduisez en logique formelle : « {phrase} »"
+        elif tmpl == 3:
+            enonce = f"Quelle est l'écriture formelle de : « {phrase} » ?"
+        else:
+            enonce = f"Comment écrire « {phrase} » avec les symboles logiques ?"
     else:
-        # Identifier P et Q puis choisir la bonne formule
         enonce = (
-            f"On pose P = « {p} » et Q = « {q} ».\n"
-            f"Parmi ces formules, laquelle traduit correctement : « {phrase} » ?"
+            f"Soit P = « {S1} {v1} {c1} » et Q = « {_min(s2)} {v2} {c2} ».\n"
+            f"Quelle formule traduit : « {phrase} » ?"
         )
-        reponse = f"P {conn['formel']} Q"
-        dist = [
-            f"Q {conn['formel']} P",
-            f"¬P {conn['formel']} Q",
-            f"P {conn['formel']} ¬Q",
-        ]
 
     random.shuffle(dist)
-    meta = {"nb_propositions":1,"nb_connecteurs":1,
-            "nb_negations":0,"profondeur_logique":0}
+    meta = {"nb_propositions":2,"nb_connecteurs":1,"nb_negations":0,"profondeur_logique":1}
     return enonce, reponse, dist[:3], meta
 
 
 def _conn_inv(params, bloom):
-    """CONN_INV — Traduction formel → LN."""
-    conn_key = random.choice(["ET","OU","IMP"])
+    """CONN_INV — Traduction formel → LN.
+    Varie le connecteur et le template.
+    """
+    conn_key = random.choice(["ET","OU","IMP","EQUIV"])
     conn     = CONNECTEURS[conn_key]
     s1,v1,c1 = _svc()
     s2,v2,c2 = _svc2(s1)
-    p = f"{_min(s1)} {v1} {c1}"
-    q = f"{_min(s2)} {v2} {c2}"
-    trad = {"ET":f"{p} et {q}","OU":f"{p} ou {q}","IMP":f"Si {p}, alors {q}"}
+    S1 = s1.capitalize()
+    p  = f"{S1} {v1} {c1}"
+    q  = f"{_min(s2)} {v2} {c2}"
+
+    formule = f"P {conn['formel']} Q"
+
+    traductions = {
+        "ET":    f"{p} et {q}",
+        "OU":    f"{p} ou {q}",
+        "IMP":   f"Si {_min(p)}, alors {q}",
+        "EQUIV": f"{p} si et seulement si {q}",
+    }
+    reponse = traductions[conn_key]
+
+    autres = [v for k,v in traductions.items() if k != conn_key]
+    random.shuffle(autres)
+    dist = autres[:3]
 
     if bloom == "comprehension":
-        # Traduire directement la formule
-        enonce  = (
-            f"Quelle phrase correspond à « P {conn['formel']} Q » "
-            f"où P = « {p} » et Q = « {q} » ?"
-        )
-        reponse = trad[conn_key]
-        dist    = [v for k,v in trad.items() if k!=conn_key]
-        dist.append(f"{q} si et seulement si {p}")
-    else:
-        # Choisir la traduction en analysant la structure
-        autres_formules = [c["formel"] for k,c in CONNECTEURS.items() if k!=conn_key][:2]
-        enonce = (
-            f"On a la formule : « P {conn['formel']} Q »\n"
-            f"avec P = « {p} » et Q = « {q} ».\n"
-            f"Quelle traduction respecte EXACTEMENT le sens "
-            f"logique de {conn['formel']} ?"
-        )
-        reponse = trad[conn_key]
-        dist = [
-            f"{p} donc {q}",
-            f"{q} parce que {p}",
-            f"{p} bien que {q}",
+        tmpl = random.randint(1, 4)
+        contexte = f"où P = « {_min(p)} » et Q = « {q} »"
+        _conn_inv_templates = [
+            f"« {formule} » avec P=« {_min(p)} », Q=« {q} » → phrase ?",
+            f"Traduisez « {formule} » : P=« {_min(p)} », Q=« {q} ».",
+            f"Lisez « {formule} » (P=« {_min(p)} », Q=« {q} ») en français.",
+            f"« {formule} », P=« {_min(p)} », Q=« {q} » : quelle phrase ?",
         ]
+        enonce = random.choice(_conn_inv_templates)
+    else:
+        enonce = (
+            f"Soit la formule « {formule} » avec :\n"
+            f"  P = « {_min(p)} »\n"
+            f"  Q = « {q} »\n"
+            f"Quelle phrase en langage naturel lui correspond exactement ?"
+        )
 
     random.shuffle(dist)
-    meta = {"nb_propositions":1,"nb_connecteurs":1,
-            "nb_negations":0,"profondeur_logique":0}
+    meta = {"nb_propositions":2,"nb_connecteurs":1,"nb_negations":0,"profondeur_logique":1}
     return enonce, reponse, dist[:3], meta
 
 
 def _imp(params, bloom):
-    """IMP — Implication logique.
-    Réponse binaire : Vraie ou Fausse uniquement (2 options).
+    """IMP — Implication logique. Réponse binaire Vraie/Fausse.
+    Varie le template pour éviter la répétition.
     """
     s1,v1,c1 = _svc()
     s2,v2,c2 = _svc2(s1)
     S1 = s1.capitalize()
     p  = f"{S1} {v1} {c1}"
     q  = f"{_min(s2)} {v2} {c2}"
-    # Couvrir les 4 cas équitablement
     vp, vq = random.choice([("V","V"),("V","F"),("F","V"),("F","F")])
     res    = TABLES["⇒"][(vp,vq)]
     rep    = "Vraie" if res=="V" else "Fausse"
@@ -1008,29 +1037,33 @@ def _imp(params, bloom):
     vq_txt = "vraie" if vq=="V" else "fausse"
     autre  = "Fausse" if rep=="Vraie" else "Vraie"
 
-    if bloom == "comprehension":
-        enonce = (
-            f"Sachant que « {p} » est {vp_txt} "
-            f"et que « {q} » est {vq_txt}, "
-            f"quelle est la valeur de « {p} ⇒ {q} » ?"
-        )
-        dist = [autre]
-    else:
-        # Identifier le seul cas où l'implication est fausse
-        enonce = (
-            f"On considère : « {p} ⇒ {q} ».\n"
-            f"Sachant que P est {vp_txt} et Q est {vq_txt}, "
-            f"quelle est la valeur de cette implication ?"
-        )
-        dist = [autre]
+    _imp_t = [
+        f"P={vp_txt}, Q={vq_txt} → « {p} ⇒ {q} » = ?",
+        f"« {p} ⇒ {q} », P={vp_txt}, Q={vq_txt} : Vraie ou Fausse ?",
+        f"Évaluez « {p} ⇒ {q} » (P={vp_txt}, Q={vq_txt}).",
+        f"Calculez « {p} ⇒ {q} » pour P={vp_txt}, Q={vq_txt}.",
+        f"« {p} ⇒ {q} » vaut quoi si P={vp_txt} et Q={vq_txt} ?",
+        f"Valeur de l'implication « {p} ⇒ {q} » (P={vp_txt}, Q={vq_txt}) ?",
+    ]
+    _imp_idx = hash(s1 + s2 + vp + vq) % len(_imp_t)
+    enonce = _imp_t[_imp_idx]
 
-    meta = {"nb_propositions":2,"nb_connecteurs":1,
-            "nb_negations":0,"profondeur_logique":2}
+    dist = [autre]
+    meta = {"nb_propositions":2,"nb_connecteurs":1,"nb_negations":0,"profondeur_logique":2}
     return enonce, rep, dist, meta
 
 
 def _equiv(params, bloom):
-    """EQUIV — Équivalence logique."""
+    """
+    EQUIV — Équivalence logique.
+
+    Varie les règles testées pour éviter la répétition :
+      R1 : P⇔Q ≡ (P⇒Q)∧(Q⇒P)      — définition
+      R2 : P⇔Q ≡ (¬P∨Q)∧(¬Q∨P)    — forme disjonctive
+      R3 : P⇔Q ≡ (P∧Q)∨(¬P∧¬Q)    — mêmes valeurs de vérité
+      R4 : ¬(P⇔Q) ≡ P⊕Q             — négation de l'équivalence
+      R5 : valeurs de vérité          — quand P⇔Q est vraie/fausse
+    """
     s1,v1,c1 = _svc()
     s2,v2,c2 = _svc2(s1)
     S1 = s1.capitalize()
@@ -1040,33 +1073,95 @@ def _equiv(params, bloom):
     nq = _neg(_min(s2),v2,c2)
 
     if bloom == "comprehension":
-        # Identifier la proposition équivalente
-        enonce  = f"Laquelle est logiquement équivalente à : « {p} ⇔ {q} » ?"
-        reponse = f"(Si {_min(p)}, alors {q}) et (si {q}, alors {_min(p)})"
-        dist    = [
-            f"(Si {_min(p)}, alors {q}) ou (si {q}, alors {_min(p)})",
-            f"Si {_min(p)}, alors {q}",
-            f"{np} ou {nq}",
-        ]
+        # Tirer UNE règle parmi 4 pour varier les questions
+        regle = random.randint(1, 4)
+
+        if regle == 1:
+            # R1 : définition par double implication
+            enonce  = f"« {p} ⇔ {q} » — quelle proposition est logiquement équivalente ?"
+            reponse = f"({p} ⇒ {q}) ET ({q} ⇒ {p})"
+            dist = [
+                # Erreur : OU au lieu de ET (tautologie)
+                f"({p} ⇒ {q}) OU ({q} ⇒ {p})",
+                # Erreur : implication simple asymétrique
+                f"{p} ⇒ {q}",
+                # Erreur : De Morgan mal appliqué
+                f"{np} OU {nq}",
+            ]
+
+        elif regle == 2:
+            # R2 : forme disjonctive ¬P∨Q et ¬Q∨P
+            enonce  = f"Quelle formule est équivalente à « {p} ⇔ {q} » en utilisant uniquement ¬ et ∨ ?"
+            reponse = f"({np} OU {q}) ET ({nq} OU {_min(p)})"
+            dist = [
+                # Erreur : une seule des deux implications
+                f"{np} OU {q}",
+                # Erreur : OU au lieu de ET
+                f"({np} OU {q}) OU ({nq} OU {_min(p)})",
+                # Erreur : confondre avec De Morgan
+                f"{np} ET {nq}",
+            ]
+
+        elif regle == 3:
+            # R3 : mêmes valeurs (P∧Q)∨(¬P∧¬Q)
+            enonce  = (
+                f"« {p} ⇔ {q} » est vraie exactement quand P et Q "
+                f"ont la même valeur. Quelle formule exprime cette condition ?"
+            )
+            reponse = f"({_min(p)} ET {q}) OU ({np} ET {nq})"
+            dist = [
+                # Erreur : seulement le cas V∧V (oubli du F∧F)
+                f"{_min(p)} ET {q}",
+                # Erreur : OU au lieu de ET dans chaque terme
+                f"({_min(p)} OU {q}) ET ({np} OU {nq})",
+                # Erreur : XOR — c'est justement la NÉGATION de ⇔
+                f"({_min(p)} ET {nq}) OU ({np} ET {q})",
+            ]
+
+        else:
+            # R4 : négation de l'équivalence (XOR)
+            enonce  = f"Quelle est la NÉGATION de « {p} ⇔ {q} » ?"
+            reponse = f"({_min(p)} ET {nq}) OU ({np} ET {q})"
+            dist = [
+                # Erreur : nier les deux membres sans changer le connecteur
+                f"{np} ⇔ {nq}",
+                # Erreur : garder l'équivalence
+                f"{_min(p)} ⇔ {q}",
+                # Erreur : De Morgan mal appliqué
+                f"{np} ET {nq}",
+            ]
+
     else:
-        # Analyser quand l'équivalence est vraie
-        enonce = (
-            f"On considère : « {p} ⇔ {q} ».\n"
-            f"Dans quels cas cette équivalence est-elle VRAIE ?"
-        )
-        reponse = "Quand P et Q ont la même valeur de vérité (V↔V ou F↔F)"
-        dist    = [
-            # Erreur 1 : confondre ⇔ avec ⇒ (asymétrie)
-            "Quand P est vraie, quelle que soit Q — comme pour P ⇒ Q",
-            # Erreur 2 : croire que ⇔ est toujours vraie
-            "Dans tous les cas — car P ⇔ Q est une tautologie",
-            # Erreur 3 : confondre avec ∧ (les deux vraies seulement)
-            "Seulement quand P et Q sont toutes deux vraies — comme pour P ∧ Q",
-        ]
+        # Analyse : quand l'équivalence est-elle vraie ou fausse ?
+        # Varier entre question sur "quand vraie" et "quand fausse"
+        cas = random.choice(['vraie', 'fausse'])
+
+        if cas == 'vraie':
+            enonce = (
+                f"On considère : « {p} ⇔ {q} ».\n"
+                f"Dans quel(s) cas cette équivalence est-elle VRAIE ?"
+            )
+            reponse = "Quand P et Q ont la même valeur de vérité : (V,V) ou (F,F)"
+            dist = [
+                "Uniquement quand P est vraie et Q est vraie",
+                "Dans tous les cas — P⇔Q est toujours vraie",
+                "Quand P est vraie, quelle que soit Q",
+            ]
+        else:
+            enonce = (
+                f"On considère : « {p} ⇔ {q} ».\n"
+                f"Dans quel(s) cas cette équivalence est-elle FAUSSE ?"
+            )
+            reponse = "Quand P et Q ont des valeurs différentes : (V,F) ou (F,V)"
+            dist = [
+                "Uniquement quand P est fausse et Q est vraie",
+                "Dans tous les cas — P⇔Q est toujours fausse",
+                "Quand P est fausse, quelle que soit Q",
+            ]
 
     random.shuffle(dist)
     meta = {"nb_propositions":2,"nb_connecteurs":1,
-            "nb_negations":0,"profondeur_logique":0}
+            "nb_negations":0,"profondeur_logique":2}
     return enonce, reponse, dist[:3], meta
 
 
@@ -1083,11 +1178,16 @@ def _morgan(params, bloom):
     nq   = _neg(_min(s2),v2,c2)
 
     if bloom == "comprehension":
-        # Appliquer directement De Morgan
-        enonce = (
-            f"Selon les lois de De Morgan, "
-            f"quelle est la négation de : « {p} {ln} {q} » ?"
-        )
+        # 6 templates distincts dès le premier caractère
+        _morgan_t = [
+            f"¬({p} {ln} {q}) ≡ ?",
+            f"Niez « {p} {ln} {q} » par De Morgan.",
+            f"Négation de « {p} {ln} {q} » (De Morgan) ?",
+            f"{p} {ln} {q} — quelle est sa négation selon De Morgan ?",
+            f"Quelle expression est équivalente à ¬({p} {ln} {q}) ?",
+            f"De Morgan → ¬({p} {ln} {q}) = ?",
+        ]
+        enonce = random.choice(_morgan_t)
         if conn == "ET":
             reponse = f"{np} ou {nq}"
             dist    = [
@@ -1143,7 +1243,11 @@ def _neg_comp(params, bloom):
     nq   = _neg(_min(s2),v2,c2)
 
     if bloom == "comprehension":
-        enonce = f"Quelle est la négation de : « {p} {ln} {q} » ?"
+        _t = random.randint(1,4)
+        if _t==1: enonce = f"Quelle est la négation de : « {p} {ln} {q} » ?"
+        elif _t==2: enonce = f"Niez la proposition : « {p} {ln} {q} »."
+        elif _t==3: enonce = f"Quelle proposition est la négation exacte de « {p} {ln} {q} » ?"
+        else: enonce = f"Appliquez De Morgan pour nier : « {p} {ln} {q} »."
         if conn == "ET":
             reponse = f"{np} ou {nq}"
             dist    = [
@@ -1209,7 +1313,11 @@ def _neg_imp(params, bloom):
     nq = _neg(_min(s2),v2,c2)
 
     if bloom == "comprehension":
-        enonce  = f"Quelle est la négation de : « Si {_min(p)}, alors {q} » ?"
+        _t = random.randint(1,4)
+        if _t==1: enonce = f"Quelle est la négation de : « Si {_min(p)}, alors {q} » ?"
+        elif _t==2: enonce = f"Niez l'implication : « Si {_min(p)}, alors {q} »."
+        elif _t==3: enonce = f"Quelle proposition est la négation de « {_min(p)} ⇒ {q} » ?"
+        else: enonce = f"Appliquez ¬(P⇒Q)≡P∧¬Q pour nier : « Si {_min(p)}, alors {q} »."
         # _min() force la minuscule après "Si" (critère C1)
         np_min = _min(np); nq_min = _min(nq)
         p_min  = _min(p);  q_min  = _min(q)
@@ -1264,13 +1372,27 @@ def _quant_trad(params, bloom):
     autre_sym = "∃" if quant=="UNIVERSEL" else "∀"
 
     if bloom == "comprehension":
-        enonce  = f"Quelle formule logique correspond à : « {phrase} » ?"
-        reponse = formel
-        dist    = [
-            autre,
-            f"{sym}x, ¬P(x)",
-            f"∃x, ¬P(x)",
+        _qt_templates = [
+            f"« {phrase} » → ∀ ou ∃ ?",
+            f"Formalisez : « {phrase} ».",
+            f"Quantificateur de « {phrase} » ?",
+            f"« {phrase} » en logique formelle ?",
+            f"Traduisez : « {phrase} ».",
+            f"Formule avec ∀/∃ pour « {phrase} » ?",
         ]
+        _qt_idx = hash(quant + phrase) % len(_qt_templates)
+        enonce = _qt_templates[_qt_idx]
+        reponse = formel
+        # Construire 3 distracteurs sans doublon
+        d1 = autre                              # ∀/∃ inversé, propriété inchangée
+        d2 = f"{sym}x, ¬P(x)"                  # même quantificateur, propriété niée
+        d3 = f"{autre_sym}x, ¬P(x)"            # quantificateur inversé ET propriété niée
+        # S'assurer que d3 ≠ reponse
+        if d3 == formel:
+            d3 = f"¬({formel})"
+        dist = list({d1, d2, d3} - {reponse})  # set pour éliminer doublons
+        while len(dist) < 3:
+            dist.append(f"¬({formel})")
     else:
         # Identifier le quantificateur ET expliquer son sens
         enonce = (
@@ -1308,7 +1430,16 @@ def _neg_quant_q(params, bloom):
     prop_inv  = _quant(quant_inv, nom, v, c)
 
     if bloom == "comprehension":
-        enonce  = f"Quelle est la négation de : « {prop} » ?"
+        _nq_templates = [
+            f"Niez : « {prop} ».",
+            f"¬({prop}) ≡ ?",
+            f"Négation de « {prop} » ?",
+            f"Niez « {prop} » (le quantificateur change).",
+            f"« {prop} » — quelle est sa négation ?",
+            f"Quelle proposition nie « {prop} » ?",
+        ]
+        _nq_idx = hash(prop) % len(_nq_templates)
+        enonce = _nq_templates[_nq_idx]
         reponse = neg
         # Distracteurs : erreurs documentées sur la négation des quantificateurs
         dist    = [
@@ -1316,10 +1447,8 @@ def _neg_quant_q(params, bloom):
             _quant(quant, nom, f"ne {v} pas", c),
             # Erreur 2 : inverser le quantificateur mais sans nier la propriété
             prop_inv,
-            # Erreur 3 : appliquer la négation sans changer de quantificateur
-            # → garder ∀ ou ∃ et nier seulement la propriété
-            # Distinct de la bonne réponse (qui change ∀↔∃ ET nie P)
-            _neg_quant(quant, nom, v, c),
+            # Erreur 3 : nier deux fois (revient à la proposition initiale)
+            prop,
         ]
     else:
         # Justifier l'échange de quantificateur
@@ -1356,7 +1485,11 @@ def _contrap(params, bloom):
     nq = _neg(_min(s2),v2,c2)
 
     if bloom == "comprehension":
-        enonce  = f"Laquelle est la contraposée de : « Si {p}, alors {q} » ?"
+        _t = random.randint(1,4)
+        if _t==1: enonce = f"Laquelle est la contraposée de : « Si {p}, alors {q} » ?"
+        elif _t==2: enonce = f"Quelle implication est équivalente à « {p} ⇒ {q} » par contraposée ?"
+        elif _t==3: enonce = f"Écrivez la contraposée de : « Si {p}, alors {q} »."
+        else: enonce = f"Quelle proposition est logiquement équivalente à « {p} ⇒ {q} » ?"
         reponse = f"Si {_min(nq)}, alors {_min(np)}"
         dist    = [
             f"Si {_min(nq)}, alors {_min(p)}",

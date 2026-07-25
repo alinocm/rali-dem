@@ -198,8 +198,18 @@ REGLES = {
     "EQUIV": {
         "nom":        "Équivalence logique (P ⇔ Q)",
         "formule":    (
-            "P ⇔ Q  ≡  (P ⇒ Q) ∧ (Q ⇒ P)\n"
-            "P ⇔ Q est vraie ⟺ P et Q ont la même valeur de vérité"
+            "Formes équivalentes de P ⇔ Q :\n"
+            "  R1 : (P ⇒ Q) ∧ (Q ⇒ P)          [double implication]\n"
+            "  R2 : (¬P ∨ Q) ∧ (¬Q ∨ P)         [forme disjonctive]\n"
+            "  R3 : (P ∧ Q) ∨ (¬P ∧ ¬Q)         [mêmes valeurs]\n"
+            "\n"
+            "Table de vérité :\n"
+            "  P=V, Q=V  →  P⇔Q = V\n"
+            "  P=V, Q=F  →  P⇔Q = F\n"
+            "  P=F, Q=V  →  P⇔Q = F\n"
+            "  P=F, Q=F  →  P⇔Q = V\n"
+            "\n"
+            "Négation : ¬(P⇔Q) ≡ (P∧¬Q) ∨ (¬P∧Q)  [ou exclusif]"
         ),
         "explication": (
             "L'équivalence P ⇔ Q signifie que P et Q sont vraies ou "
