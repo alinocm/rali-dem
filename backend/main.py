@@ -114,18 +114,52 @@ def index():
 
 @app.on_event("startup")
 def startup():
-    db_path = os.environ.get("RALI_DB_PATH", "non défini")
-    print(f"[RALI-DEM] DB_PATH = {db_path}")
-    print(f"[RALI-DEM] RAILWAY = {os.environ.get('RAILWAY_ENVIRONMENT', 'local')}")
+    import sqlite3
 
-    # Vérifier que le dossier /data existe sur Railway
+    db_path = os.environ.get("RALI_DB_PATH", "non défini")
+    print(f"[RALI-DEM] DB_PATH    = {db_path}")
+    print(f"[RALI-DEM] RAILWAY    = {os.environ.get('RAILWAY_ENVIRONMENT', 'local')}")
+
+    # Créer /data si Railway
     if os.environ.get("RAILWAY_ENVIRONMENT"):
         os.makedirs("/data", exist_ok=True)
-        print(f"[RALI-DEM] /data créé ou existant")
 
     init_database()
     init_tables_auth()
     init_tables_tracking()
+
+    # Vérifier et créer l'admin si absent
+    try:
+        conn = sqlite3.connect(db_path)
+        nb = conn.execute(
+            "SELECT COUNT(*) FROM utilisateurs WHERE role='administrateur'"
+        ).fetchone()[0]
+        conn.close()
+        if nb == 0:
+            print("[RALI-DEM] ⚠️  Aucun admin — recréation forcée")
+            from auth import init_tables_auth as _init_auth
+            import sqlite3 as _sq, secrets as _sec, hashlib as _hl
+            from datetime import datetime as _dt, timezone as _tz
+            conn2 = _sq.connect(db_path)
+            sel = _sec.token_hex(32)
+            h   = _hl.sha256(("Admin2026!" + sel).encode()).hexdigest()
+            now = _dt.now(_tz.utc).isoformat()
+            conn2.execute("""
+                INSERT OR IGNORE INTO utilisateurs
+                    (nom, prenom, email, mot_de_passe, sel, niveau,
+                     institution, role, actif, date_creation)
+                VALUES (?,?,?,?,?,?,?,?,1,?)
+            """, ("Admin","RALI-DEM","admin@rali-dem.cm",
+                  h, sel, "Doctorat",
+                  "Universite de Yaounde I","administrateur", now))
+            conn2.commit()
+            conn2.close()
+            print("[RALI-DEM] ✅ Compte admin créé : admin@rali-dem.cm / Admin2026!")
+        else:
+            print(f"[RALI-DEM] ✅ Admin présent ({nb} compte(s))")
+    except Exception as e:
+        print(f"[RALI-DEM] ⚠️  Erreur vérification admin : {e}")
+
     print("[RALI-DEM] Démarrage ✅")
 
 
