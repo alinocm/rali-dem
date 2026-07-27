@@ -86,7 +86,18 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
+
+# ── Autoriser le domaine Railway ──────────────────────────────
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+@app.middleware("http")
+async def add_railway_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    return response
 
 # ── Servir le frontend ────────────────────────────────────────
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), '..', 'frontend')
@@ -103,10 +114,84 @@ def index():
 
 @app.on_event("startup")
 def startup():
+    db_path = os.environ.get("RALI_DB_PATH", "non défini")
+    print(f"[RALI-DEM] DB_PATH = {db_path}")
+    print(f"[RALI-DEM] RAILWAY = {os.environ.get('RAILWAY_ENVIRONMENT', 'local')}")
+
+    # Vérifier que le dossier /data existe sur Railway
+    if os.environ.get("RAILWAY_ENVIRONMENT"):
+        os.makedirs("/data", exist_ok=True)
+        print(f"[RALI-DEM] /data créé ou existant")
+
     init_database()
     init_tables_auth()
     init_tables_tracking()
     print("[RALI-DEM] Démarrage ✅")
+
+
+@app.get("/api/diagnostic")
+def diagnostic():
+    """Route de diagnostic — vérifier l'état de la BD en ligne."""
+    import sqlite3
+    db_path = os.environ.get("RALI_DB_PATH", "inconnu")
+    try:
+        conn = sqlite3.connect(db_path)
+        tables = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+        nb_users = conn.execute("SELECT COUNT(*) FROM utilisateurs").fetchone()[0]
+        nb_admin = conn.execute(
+            "SELECT COUNT(*) FROM utilisateurs WHERE role='administrateur'"
+        ).fetchone()[0]
+        conn.close()
+        return {
+            "db_path":   db_path,
+            "tables":    [t[0] for t in tables],
+            "nb_users":  nb_users,
+            "nb_admin":  nb_admin,
+            "railway":   os.environ.get("RAILWAY_ENVIRONMENT", "local"),
+        }
+    except Exception as e:
+        return {"error": str(e), "db_path": db_path}
+
+
+@app.post("/api/diagnostic/creer_admin")
+def creer_admin_force():
+    """Force la création du compte admin si absent.
+    À appeler une seule fois après le premier déploiement.
+    """
+    import sqlite3, secrets, hashlib
+    db_path = os.environ.get("RALI_DB_PATH", "inconnu")
+    try:
+        conn = sqlite3.connect(db_path)
+        exist = conn.execute(
+            "SELECT id FROM utilisateurs WHERE email='admin@rali-dem.cm'"
+        ).fetchone()
+        if exist:
+            conn.close()
+            return {"message": "Compte admin déjà existant", "id": exist[0]}
+
+        # Créer le compte admin
+        sel = secrets.token_hex(32)
+        mdp = "Admin2026!"
+        h   = hashlib.sha256((mdp + sel).encode()).hexdigest()
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute("""
+            INSERT INTO utilisateurs
+                (nom, prenom, email, mot_de_passe, sel, niveau,
+                 institution, role, actif, date_creation)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+        """, ("Admin", "RALI-DEM", "admin@rali-dem.cm", h, sel,
+              "Doctorat", "Universite de Yaounde I",
+              "administrateur", now))
+        conn.commit()
+        conn.close()
+        return {"message": "Compte admin créé avec succès",
+                "email": "admin@rali-dem.cm",
+                "mot_de_passe": "Admin2026!"}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 # ═════════════════════════════════════════════════════════════
