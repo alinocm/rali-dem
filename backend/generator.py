@@ -601,18 +601,24 @@ def generer_question(objectif_code, mode_bloom="comprehension",
             # ── Enregistrement du hash ────────────────────────
             _enregistrer_hash(h)
             q["hash"] = h
+            # Cohérence : le niveau affiché = niveau demandé
+            q["niveau_complexite"] = niveau_complexite
             return q
 
         except Exception:
             continue
 
-    # Fallback sans contrainte d'unicité
+    # Fallback sans contrainte d'unicité ni de niveau
+    # (certains objectifs comme MORGAN/NEG_IMP ne peuvent pas
+    #  atteindre le niveau "moyen" structurellement)
     g = random.choice(GABARITS[objectif_code])
     q = _construire(g, objectif_code, mode_bloom, niveau_complexite, params)
     if q:
         h = _calculer_hash(q["enonce"], q["reponse_correcte"], objectif_code)
         _enregistrer_hash(h)
         q["hash"] = h
+        # Forcer le niveau demandé pour cohérence avec la fiche
+        q["niveau_complexite"] = niveau_complexite
     return q
 
 def _construire(g, code, bloom, niveau, params):

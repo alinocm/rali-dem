@@ -11,7 +11,8 @@ import os
 import json
 from datetime import datetime
 
-DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'database', 'rali_dem.db')
+DB_PATH = os.environ.get('RALI_DB_PATH',
+    os.path.join(os.path.dirname(__file__), '..', 'database', 'rali_dem.db'))
 
 
 # ═════════════════════════════════════════════════════════════
@@ -369,7 +370,10 @@ def exporter_fiche_html(
         # Indicateurs de complexité
         ert   = q.get("ert_secondes", 0)
         score = q.get("score_pedagogique", 0)
-        niv   = q.get("niveau_complexite", "").upper()
+        # niveau affiché = niveau de la fiche (demandé)
+        # ou niveau calculé si non spécifié
+        niv = (niveau.upper() if niveau
+               else q.get("niveau_complexite", "").upper())
 
         questions_html += f"""
         <div class="question">
