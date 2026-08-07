@@ -330,9 +330,25 @@
       .form-grid { grid-template-columns: 1fr 1fr; }
     }
     @media (max-width: 640px) {
-      .sidebar { display: none; }
+      .sidebar {
+        display: flex;
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+        z-index: 200;
+      }
+      .sidebar.open {
+        transform: translateX(0);
+      }
       .main { margin-left: 0; }
       .grid-2, .grid-3, .form-grid { grid-template-columns: 1fr; }
+      #burger-btn { display: inline-block !important; }
+      #overlay-sidebar {
+        display: none;
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.4);
+        z-index: 150;
+      }
+      #overlay-sidebar.open { display: block; }
     }
 
     /* ── Loader ── */
@@ -429,6 +445,11 @@
   ═══════════════════════════════════════════ -->
   <main class="main">
     <div class="topbar">
+      <button id="burger-btn" onclick="toggleSidebar()"
+              aria-label="Menu"
+              style="display:none;background:none;border:none;cursor:pointer;
+                     padding:4px 8px;margin-right:8px;font-size:22px;
+                     color:var(--navy);line-height:1">☰</button>
       <h2 id="topbar-title">Tableau de bord</h2>
       <div class="topbar-right">
         <span id="topbar-badge" class="badge">RALI-DEM</span>
@@ -952,7 +973,39 @@ function melangerTableau(arr) {
 // ═══════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════
-async function init() {
+// ── Overlay pour fermer la sidebar sur mobile ──────────────
+  const overlayEl = document.createElement('div');
+  overlayEl.id = 'overlay-sidebar';
+  overlayEl.onclick = () => closeSidebar();
+  document.body.appendChild(overlayEl);
+
+  function toggleSidebar() {
+    const sb  = document.querySelector('.sidebar');
+    const ov  = document.getElementById('overlay-sidebar');
+    const isOpen = sb.classList.contains('open');
+    if (isOpen) {
+      sb.classList.remove('open');
+      ov.classList.remove('open');
+    } else {
+      sb.classList.add('open');
+      ov.classList.add('open');
+    }
+  }
+
+  function closeSidebar() {
+    document.querySelector('.sidebar').classList.remove('open');
+    const ov = document.getElementById('overlay-sidebar');
+    if (ov) ov.classList.remove('open');
+  }
+
+  // Fermer la sidebar après navigation sur mobile
+  const origShowSection = showSection;
+  function showSection(id, navEl) {
+    origShowSection(id, navEl);
+    if (window.innerWidth <= 640) closeSidebar();
+  }
+
+  async function init() {
   try {
     const objectifs = await api("GET", "/objectifs");
     console.log("[init] Objectifs reçus:", objectifs ? objectifs.length : 0);
