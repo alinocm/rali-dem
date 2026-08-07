@@ -954,6 +954,14 @@ function showSection(id, navEl) {
   };
   if ($("topbar-title")) $("topbar-title").textContent = titres[id] || id;
 
+  // ── Fermer la sidebar sur mobile après navigation ──────────
+  if (window.innerWidth <= 640) {
+    const sb = document.querySelector('.sidebar');
+    const ov = document.getElementById('overlay-sidebar');
+    if (sb) sb.classList.remove('open');
+    if (ov) ov.classList.remove('open');
+  }
+
   if (id === "dashboard")        chargerDashboard();
   if (id === "historique")       chargerHistorique();
   if (id === "rapport")          chargerRapport();
@@ -996,13 +1004,6 @@ function melangerTableau(arr) {
     document.querySelector('.sidebar').classList.remove('open');
     const ov = document.getElementById('overlay-sidebar');
     if (ov) ov.classList.remove('open');
-  }
-
-  // Fermer la sidebar après navigation sur mobile
-  const origShowSection = showSection;
-  function showSection(id, navEl) {
-    origShowSection(id, navEl);
-    if (window.innerWidth <= 640) closeSidebar();
   }
 
   async function init() {
