@@ -99,6 +99,21 @@ async def add_railway_headers(request: Request, call_next):
     response.headers["Access-Control-Allow-Origin"] = "*"
     return response
 
+# ── Gestionnaire global d'exceptions → toujours du JSON ─────
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Garantit que toute erreur 500 est renvoyée en JSON, jamais en texte brut."""
+    if isinstance(exc, HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail}
+        )
+    print(f"[ERREUR 500] {request.method} {request.url.path} → {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Erreur interne : {str(exc)}"}
+    )
+
 # ── Servir le frontend ────────────────────────────────────────
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), '..', 'frontend')
 INDEX_HTML   = os.path.join(FRONTEND_DIR, 'index.html')

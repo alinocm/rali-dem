@@ -910,8 +910,11 @@ async function api(method, path, body=null) {
   const opts = { method, headers: {"Content-Type":"application/json"} };
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(API + path, opts);
-  if (!r.ok) { const e = await r.json(); throw new Error(e.detail || r.statusText); }
-  return r.json();
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({ detail: r.statusText || "Erreur serveur" }));
+    throw new Error(e.detail || r.statusText || "Erreur serveur");
+  }
+  return r.json().catch(() => ({}));
 }
 const $ = id => document.getElementById(id);
 
@@ -981,32 +984,39 @@ function melangerTableau(arr) {
 // ═══════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════
-// ── Overlay pour fermer la sidebar sur mobile ──────────────
-  const overlayEl = document.createElement('div');
-  overlayEl.id = 'overlay-sidebar';
-  overlayEl.onclick = () => closeSidebar();
-  document.body.appendChild(overlayEl);
-
-  function toggleSidebar() {
-    const sb  = document.querySelector('.sidebar');
-    const ov  = document.getElementById('overlay-sidebar');
-    const isOpen = sb.classList.contains('open');
-    if (isOpen) {
-      sb.classList.remove('open');
-      ov.classList.remove('open');
-    } else {
-      sb.classList.add('open');
-      ov.classList.add('open');
-    }
-  }
-
-  function closeSidebar() {
-    document.querySelector('.sidebar').classList.remove('open');
-    const ov = document.getElementById('overlay-sidebar');
+// ── Burger menu mobile ──────────────────────────────────────
+function toggleSidebar() {
+  const sb = document.querySelector('.sidebar');
+  const ov = document.getElementById('overlay-sidebar');
+  if (!sb) return;
+  const isOpen = sb.classList.contains('open');
+  if (isOpen) {
+    sb.classList.remove('open');
     if (ov) ov.classList.remove('open');
+  } else {
+    sb.classList.add('open');
+    if (ov) ov.classList.add('open');
   }
+}
 
-  async function init() {
+function closeSidebar() {
+  const sb = document.querySelector('.sidebar');
+  const ov = document.getElementById('overlay-sidebar');
+  if (sb) sb.classList.remove('open');
+  if (ov) ov.classList.remove('open');
+}
+
+// Créer l'overlay mobile au chargement
+document.addEventListener('DOMContentLoaded', function() {
+  if (!document.getElementById('overlay-sidebar')) {
+    const ov = document.createElement('div');
+    ov.id = 'overlay-sidebar';
+    ov.onclick = closeSidebar;
+    document.body.appendChild(ov);
+  }
+});
+
+async function init() {
   try {
     const objectifs = await api("GET", "/objectifs");
     console.log("[init] Objectifs reçus:", objectifs ? objectifs.length : 0);
@@ -1884,7 +1894,7 @@ async function apiAuth(method, route, body = null) {
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(API + route, opts);
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.detail || "Erreur serveur");
+  if (!r.ok) throw new Error(data.detail || r.statusText || "Erreur serveur");
   return data;
 }
 
