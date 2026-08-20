@@ -40,8 +40,10 @@ os.environ["RALI_DB_PATH"] = os.path.join(DB_DIR, "rali_dem.db")
 from database  import init_database, get_all_objectifs
 from generator import generer_question, reset_session
 from corrector import corriger
-from adaptive  import creer_session, enregistrer_reponse, get_session
-from exam      import creer_examen, soumettre_reponse, get_bulletin
+from adaptive  import (init_tables_adaptatives,
+               creer_session, enregistrer_reponse, get_session)
+from exam      import (init_tables_examen,
+               creer_examen, soumettre_reponse, get_bulletin)
 from tools     import (
     get_rapport_erreurs, get_indice,
     exporter_fiche_html,
@@ -142,6 +144,8 @@ def startup():
     init_database()
     init_tables_auth()
     init_tables_tracking()
+    init_tables_adaptatives()
+    init_tables_examen()
 
     # Vérifier et créer l'admin si absent
     try:
