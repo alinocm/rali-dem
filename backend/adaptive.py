@@ -1,812 +1,472 @@
 # ─────────────────────────────────────────────────────────────
-# main.py  —  API FastAPI RALI-DEM (version complète)
+# adaptive.py  —  Parcours adaptatif RALI-DEM
+# Ajuste automatiquement le niveau de complexité
+# selon les performances de l'apprenant en temps réel.
 # ─────────────────────────────────────────────────────────────
 
+import json
+import sqlite3
 import os
-import sys
+from datetime import datetime
 
-# Ajouter le dossier backend au sys.path
-# Fonctionne dans les deux cas :
-#   - local    : python backend/main.py
-#   - Railway  : uvicorn backend.main:app
-_backend_dir = os.path.dirname(os.path.abspath(__file__))
-if _backend_dir not in sys.path:
-    sys.path.insert(0, _backend_dir)
+DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'database', 'rali_dem.db')
 
-from fastapi import FastAPI, HTTPException, Header
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, Response, FileResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-from typing import Optional, List
+# ─────────────────────────────────────────────────────────────
+# CONSTANTES DU MOTEUR ADAPTATIF
+# ─────────────────────────────────────────────────────────────
 
-# ── Chemins dynamiques (local vs Railway) ─────────────────────
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.dirname(BASE_DIR)
+NIVEAUX        = ["faible", "moyen", "eleve"]
+SEUIL_MONTEE   = 3   # bonnes réponses consécutives pour monter
+SEUIL_DESCENTE = 2   # mauvaises réponses consécutives pour descendre
 
-# Sur Railway : utiliser /data pour la persistance (Volume)
-# En local : utiliser database/ dans le projet
-if os.environ.get("RAILWAY_ENVIRONMENT"):
-    DB_DIR = "/data"
-else:
-    DB_DIR = os.path.join(ROOT_DIR, "database")
+MESSAGES_NIVEAU = {
+    "montee": {
+        "faible→moyen": (
+            "🎉 Excellent ! Vous maîtrisez le niveau de base. "
+            "On passe au niveau intermédiaire !"
+        ),
+        "moyen→eleve": (
+            "🏆 Très bien ! Vous êtes prêt pour les questions avancées. "
+            "On passe au niveau élevé !"
+        ),
+    },
+    "descente": {
+        "moyen→faible": (
+            "💪 Pas de panique ! On revient sur les bases "
+            "pour consolider vos acquis."
+        ),
+        "eleve→moyen": (
+            "💪 Ces questions sont difficiles. "
+            "On revient au niveau intermédiaire pour renforcer les fondations."
+        ),
+    },
+    "maintien": (
+        "Continuez ainsi, vous progressez bien !"
+    ),
+}
 
-os.makedirs(DB_DIR, exist_ok=True)
 
-# Injecter le chemin dans tous les modules
-os.environ["RALI_DB_PATH"] = os.path.join(DB_DIR, "rali_dem.db")
+# ─────────────────────────────────────────────────────────────
+# INITIALISATION DE LA BASE (table sessions_adaptatives)
+# ─────────────────────────────────────────────────────────────
 
-# ── Imports modules RALI-DEM ──────────────────────────────────
-from database  import init_database, get_all_objectifs
-from generator import generer_question, reset_session
-from corrector import corriger
-from adaptive  import (init_tables_adaptatives,
-               creer_session, enregistrer_reponse, get_session)
-from exam      import (init_tables_examen,
-               creer_examen, soumettre_reponse, get_bulletin)
-from tools     import (
-    get_rapport_erreurs, get_indice,
-    exporter_fiche_html,
-    exporter_json as exp_json,
-    exporter_csv as exp_csv,
-    exporter_moodle_xml
-)
-from auth      import (
-    init_tables_auth, inscrire, connecter, deconnecter,
-    verifier_token_request, get_utilisateur,
-    get_tous_utilisateurs, changer_mot_de_passe,
-    activer_desactiver, modifier_role
-)
-from tracking  import (
-    init_tables_tracking,
-    creer_session_adaptative, enregistrer_reponse_adaptative,
-    terminer_session_adaptative,
-    creer_session_examen,
-    enregistrer_reponse_examen as track_rep_exam,
-    terminer_session_examen,
-    get_historique_apprenant, get_resultats_par_objectif
-)
-from stats import (
-    get_tableau_bord, get_stats_objectifs,
-    get_stats_apprenant, get_stats_cohorte,
-    get_matrice_correlations, get_progression_temporelle,
-    exporter_stats_json, exporter_stats_csv, exporter_stats_spss
-)
+def init_tables_adaptatives():
+    """Crée les tables nécessaires au parcours adaptatif."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
 
-# ═════════════════════════════════════════════════════════════
-# INITIALISATION
-# ═════════════════════════════════════════════════════════════
-
-app = FastAPI(
-    title="RALI-DEM API",
-    description="Générateur automatique de questions de logique mathématique",
-    version="2.0.0"
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-    allow_credentials=True,
-)
-
-# ── Autoriser le domaine Railway ──────────────────────────────
-from fastapi import Request
-from fastapi.responses import JSONResponse
-
-@app.middleware("http")
-async def add_railway_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    return response
-
-# ── Gestionnaire global d'exceptions → toujours du JSON ─────
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    """Garantit que toute erreur 500 est renvoyée en JSON, jamais en texte brut."""
-    if isinstance(exc, HTTPException):
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={"detail": exc.detail}
+    # Session adaptative
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sessions_adaptatives (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            apprenant           TEXT    NOT NULL DEFAULT "anonyme",
+            objectif_code       TEXT    NOT NULL,
+            mode_bloom          TEXT    NOT NULL DEFAULT "comprehension",
+            niveau_actuel       TEXT    NOT NULL DEFAULT "faible",
+            nb_bonnes           INTEGER NOT NULL DEFAULT 0,
+            nb_mauvaises        INTEGER NOT NULL DEFAULT 0,
+            bonnes_consecutives INTEGER NOT NULL DEFAULT 0,
+            mauvaises_consecutives INTEGER NOT NULL DEFAULT 0,
+            nb_questions_total  INTEGER NOT NULL DEFAULT 0,
+            score_global        REAL    NOT NULL DEFAULT 0.0,
+            statut              TEXT    NOT NULL DEFAULT "en_cours",
+            date_debut          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            date_fin            TIMESTAMP
         )
-    print(f"[ERREUR 500] {request.method} {request.url.path} → {exc}")
-    return JSONResponse(
-        status_code=500,
-        content={"detail": f"Erreur interne : {str(exc)}"}
-    )
-
-# ── Servir le frontend ────────────────────────────────────────
-FRONTEND_DIR = os.path.join(os.path.dirname(__file__), '..', 'frontend')
-INDEX_HTML   = os.path.join(FRONTEND_DIR, 'index.html')
-
-@app.get("/")
-def root():
-    """Sert la page principale de l'application."""
-    return FileResponse(INDEX_HTML)
-
-@app.get("/index.html")
-def index():
-    return FileResponse(INDEX_HTML)
-
-@app.on_event("startup")
-def startup():
-    import sqlite3
-
-    db_path = os.environ.get("RALI_DB_PATH", "non défini")
-    print(f"[RALI-DEM] DB_PATH    = {db_path}")
-    print(f"[RALI-DEM] RAILWAY    = {os.environ.get('RAILWAY_ENVIRONMENT', 'local')}")
-
-    # Créer /data si Railway
-    if os.environ.get("RAILWAY_ENVIRONMENT"):
-        os.makedirs("/data", exist_ok=True)
-
-    init_database()
-    init_tables_auth()
-    init_tables_tracking()
-    init_tables_adaptatives()
-    init_tables_examen()
-
-    # Vérifier et créer l'admin si absent
-    try:
-        conn = sqlite3.connect(db_path)
-        nb = conn.execute(
-            "SELECT COUNT(*) FROM utilisateurs WHERE role='administrateur'"
-        ).fetchone()[0]
-        conn.close()
-        if nb == 0:
-            print("[RALI-DEM] ⚠️  Aucun admin — recréation forcée")
-            from auth import init_tables_auth as _init_auth
-            import sqlite3 as _sq, secrets as _sec, hashlib as _hl
-            from datetime import datetime as _dt, timezone as _tz
-            conn2 = _sq.connect(db_path)
-            sel = _sec.token_hex(32)
-            h   = _hl.sha256(("Admin2026!" + sel).encode()).hexdigest()
-            now = _dt.now(_tz.utc).isoformat()
-            conn2.execute("""
-                INSERT OR IGNORE INTO utilisateurs
-                    (nom, prenom, email, mot_de_passe, sel, niveau,
-                     institution, role, actif, date_creation)
-                VALUES (?,?,?,?,?,?,?,?,1,?)
-            """, ("Admin","RALI-DEM","admin@rali-dem.cm",
-                  h, sel, "Doctorat",
-                  "Universite de Yaounde I","administrateur", now))
-            conn2.commit()
-            conn2.close()
-            print("[RALI-DEM] ✅ Compte admin créé : admin@rali-dem.cm / Admin2026!")
-        else:
-            print(f"[RALI-DEM] ✅ Admin présent ({nb} compte(s))")
-    except Exception as e:
-        print(f"[RALI-DEM] ⚠️  Erreur vérification admin : {e}")
-
-    print("[RALI-DEM] Démarrage ✅")
-
-
-@app.get("/api/diagnostic")
-def diagnostic():
-    """Route de diagnostic — vérifier l'état de la BD en ligne."""
-    import sqlite3
-    db_path = os.environ.get("RALI_DB_PATH", "inconnu")
-    try:
-        conn = sqlite3.connect(db_path)
-        tables = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()
-        nb_users = conn.execute("SELECT COUNT(*) FROM utilisateurs").fetchone()[0]
-        nb_admin = conn.execute(
-            "SELECT COUNT(*) FROM utilisateurs WHERE role='administrateur'"
-        ).fetchone()[0]
-        conn.close()
-        return {
-            "db_path":   db_path,
-            "tables":    [t[0] for t in tables],
-            "nb_users":  nb_users,
-            "nb_admin":  nb_admin,
-            "railway":   os.environ.get("RAILWAY_ENVIRONMENT", "local"),
-        }
-    except Exception as e:
-        return {"error": str(e), "db_path": db_path}
-
-
-@app.post("/api/diagnostic/creer_admin")
-def creer_admin_force():
-    """Force la création du compte admin si absent.
-    À appeler une seule fois après le premier déploiement.
-    """
-    import sqlite3, secrets, hashlib
-    db_path = os.environ.get("RALI_DB_PATH", "inconnu")
-    try:
-        conn = sqlite3.connect(db_path)
-        exist = conn.execute(
-            "SELECT id FROM utilisateurs WHERE email='admin@rali-dem.cm'"
-        ).fetchone()
-        if exist:
-            conn.close()
-            return {"message": "Compte admin déjà existant", "id": exist[0]}
-
-        # Créer le compte admin
-        sel = secrets.token_hex(32)
-        mdp = "Admin2026!"
-        h   = hashlib.sha256((mdp + sel).encode()).hexdigest()
-        from datetime import datetime, timezone
-        now = datetime.now(timezone.utc).isoformat()
-        conn.execute("""
-            INSERT INTO utilisateurs
-                (nom, prenom, email, mot_de_passe, sel, niveau,
-                 institution, role, actif, date_creation)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-        """, ("Admin", "RALI-DEM", "admin@rali-dem.cm", h, sel,
-              "Doctorat", "Universite de Yaounde I",
-              "administrateur", now))
-        conn.commit()
-        conn.close()
-        return {"message": "Compte admin créé avec succès",
-                "email": "admin@rali-dem.cm",
-                "mot_de_passe": "Admin2026!"}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-# ═════════════════════════════════════════════════════════════
-# MODÈLES PYDANTIC
-# ═════════════════════════════════════════════════════════════
-
-class DemandeQuestion(BaseModel):
-    objectif_code:     str
-    mode_bloom:        str = "comprehension"
-    niveau_complexite: str = "moyen"
-    sauvegarder:       bool = False
-
-class DemandeCorrection(BaseModel):
-    objectif_code:     str
-    reponse_correcte:  str
-    reponse_apprenant: str
-    enonce:            str
-    distracteurs:      List[str] = []
-    mode_bloom:        str = "comprehension"
-
-class DemandeSession(BaseModel):
-    objectif_code: str
-    mode_bloom:    str = "comprehension"
-    apprenant:     str = ""
-    niveau_depart: str = "faible"
-
-class DemandeReponse(BaseModel):
-    session_id:        int
-    enonce:            str
-    reponse_correcte:  str
-    reponse_apprenant: str
-    est_correct:       bool
-    ert_secondes:      float = 0.0
-    score_question:    float = 0.0
-
-class DemandeExamen(BaseModel):
-    objectifs:    List[str]
-    mode_bloom:   str = "comprehension"
-    niveau:       str = "moyen"
-    nb_questions: int = 10
-    apprenant:    str = ""
-    titre:        str = "Examen RALI-DEM"
-
-class DemandeRepExamen(BaseModel):
-    examen_id:         int
-    numero_question:   int = 1
-    reponse_apprenant: str
-    temps_reponse_s:   float = 0.0
-    # Champs tracking (optionnels)
-    objectif_code:     str = ""
-    enonce:            str = ""
-    reponse_correcte:  str = ""
-    est_correct:       bool = False
-    ert_secondes:      float = 0.0
-    score_question:    float = 0.0
-
-class DemandeExport(BaseModel):
-    questions:    List[dict]
-    titre:        str  = "Fiche d'exercices — Logique mathématique"
-    avec_corrige: bool = False
-    enseignant:   str  = ""
-    niveau:       str  = ""
-    format:       str  = "html"
-
-# ── Auth ──────────────────────────────────────────────────────
-class DemandeInscription(BaseModel):
-    nom:          str
-    prenom:       str
-    email:        str
-    mot_de_passe: str
-    niveau:       str
-    institution:  str
-    role:         str = "apprenant"
-
-class DemandeConnexion(BaseModel):
-    email:        str
-    mot_de_passe: str
-
-class DemandeMdp(BaseModel):
-    ancien_mdp:  str
-    nouveau_mdp: str
-
-class DemandeRole(BaseModel):
-    nouveau_role: str
-
-# ── Tracking ──────────────────────────────────────────────────
-class DemandeSessionAdapt(BaseModel):
-    objectif_code: str
-    mode_bloom:    str = "comprehension"
-    niveau_depart: str = "faible"
-
-class DemandeRepAdapt(BaseModel):
-    session_id:        int
-    objectif_code:     str
-    mode_bloom:        str
-    niveau_complexite: str
-    enonce:            str
-    reponse_apprenant: str
-    reponse_correcte:  str
-    est_correct:       bool
-    ert_secondes:      float = 0.0
-    score_question:    float = 0.0
-
-class DemandeTerminerAdapt(BaseModel):
-    session_id:   int
-    niveau_final: str
-
-class DemandeSessionExam(BaseModel):
-    titre:           str
-    objectifs_codes: List[str]
-    mode_bloom:      str = "comprehension"
-    niveau:          str = "moyen"
-
-class DemandeRepExamTrack(BaseModel):
-    session_examen_id: int
-    objectif_code:     str
-    mode_bloom:        str
-    niveau_complexite: str
-    enonce:            str
-    reponse_apprenant: str
-    reponse_correcte:  str
-    est_correct:       bool
-    ert_secondes:      float = 0.0
-    score_question:    float = 0.0
-    temps_reponse_s:   float = 0.0
-
-
-# ═════════════════════════════════════════════════════════════
-# HELPERS
-# ═════════════════════════════════════════════════════════════
-
-def _verifier_auth(authorization: Optional[str]) -> dict:
-    """Vérifie le token et retourne le payload."""
-    try:
-        return verifier_token_request(authorization)
-    except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e))
-
-def _verifier_admin(authorization: Optional[str]) -> dict:
-    """Vérifie que l'utilisateur est admin."""
-    payload = _verifier_auth(authorization)
-    if payload.get("role") != "administrateur":
-        raise HTTPException(status_code=403, detail="Accès réservé à l'administrateur.")
-    return payload
-
-
-# Route alias pour compatibilité avec l'ancien dashboard
-@app.get("/api/statistiques")
-def route_statistiques_alias(authorization: Optional[str] = Header(None)):
-    """Alias de /api/stats/tableau_bord pour compatibilité."""
-    try:
-        return get_tableau_bord()
-    except Exception as e:
-        # Retourner des stats vides si pas de données
-        return {
-            "apprenants": {"total": 0, "actifs_7_jours": 0},
-            "sessions":   {"adaptatives": 0, "examens": 0, "total": 0},
-            "reponses":   {"total": 0, "taux_reussite": 0.0, "ert_moyen": 0.0},
-            "examens":    {"note_moyenne": 0.0},
-            "objectifs":  {"plus_echoue": None, "mieux_maitrise": None},
-            "date_calcul": "N/A",
-        }
-
-# ═════════════════════════════════════════════════════════════
-# ROUTES — GÉNÉRATION
-# ═════════════════════════════════════════════════════════════
-
-@app.post("/api/generer")
-def route_generer(d: DemandeQuestion):
-    try:
-        q = generer_question(d.objectif_code, d.mode_bloom, d.niveau_complexite)
-        if not q:
-            raise HTTPException(500, "Impossible de générer une question.")
-        return q
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.post("/api/corriger")
-def route_corriger(d: DemandeCorrection):
-    return corriger(
-        objectif_code     = d.objectif_code,
-        reponse_correcte  = d.reponse_correcte,
-        reponse_apprenant = d.reponse_apprenant,
-        enonce            = d.enonce,
-        distracteurs      = d.distracteurs,
-    )
-
-@app.get("/api/objectifs")
-def route_objectifs():
-    return get_all_objectifs()
-
-@app.get("/api/indice/{objectif_code}/{niveau}")
-def route_indice(objectif_code: str, niveau: int):
-    return get_indice(objectif_code, niveau)
-
-@app.get("/api/rapport_erreurs")
-def route_rapport(apprenant: str = "",
-                  authorization: Optional[str] = Header(None)):
-    # Si connecté, filtrer par utilisateur_id pour un rapport personnel
-    utilisateur_id = None
-    try:
-        if authorization:
-            payload = verifier_token_request(authorization)
-            utilisateur_id = payload.get("user_id")
-    except Exception:
-        pass
-    return get_rapport_erreurs(apprenant, utilisateur_id=utilisateur_id)
-
-
-# ═════════════════════════════════════════════════════════════
-# ROUTES — PARCOURS ADAPTATIF
-# ═════════════════════════════════════════════════════════════
-
-@app.post("/api/adaptive/session")
-def route_creer_session(d: DemandeSession):
-    reset_session()
-    return creer_session(d.objectif_code, d.mode_bloom,
-                         d.apprenant, d.niveau_depart)
-
-@app.post("/api/adaptive/reponse")
-def route_reponse_adaptive(d: DemandeReponse):
-    return enregistrer_reponse(
-        d.session_id, d.enonce, d.reponse_correcte,
-        d.reponse_apprenant, d.est_correct,
-        d.ert_secondes, d.score_question
-    )
-
-@app.get("/api/adaptive/historique/{session_id}")
-def route_historique_session(session_id: int):
-    return get_session(session_id)
-
-@app.post("/api/adaptive/terminer/{session_id}")
-def route_terminer_session(session_id: int):
-    return get_session(session_id)
-
-
-# ═════════════════════════════════════════════════════════════
-# ROUTES — EXAMEN
-# ═════════════════════════════════════════════════════════════
-
-@app.post("/api/examen/creer")
-def route_creer_examen(d: DemandeExamen):
-    reset_session()
-    return creer_examen(d.objectifs, d.mode_bloom, d.niveau,
-                        d.nb_questions, d.apprenant, d.titre)
-
-@app.post("/api/examen/reponse")
-def route_reponse_examen(d: DemandeRepExamen):
-    return soumettre_reponse(
-        d.examen_id, d.numero_question,
-        d.reponse_apprenant, d.temps_reponse_s
-    )
-
-@app.post("/api/examen/repondre")
-def route_repondre_examen(d: DemandeRepExamen):
-    """Alias de /api/examen/reponse pour compatibilité frontend."""
-    return soumettre_reponse(
-        d.examen_id, d.numero_question,
-        d.reponse_apprenant, d.temps_reponse_s
-    )
-
-@app.post("/api/examen/terminer/{examen_id}")
-def route_terminer_examen(examen_id: int):
-    return get_bulletin(examen_id)
-
-@app.get("/api/examen/{examen_id}")
-def route_get_examen(examen_id: int):
-    return get_bulletin(examen_id)
-
-@app.get("/api/examen/bulletin/{examen_id}")
-def route_get_bulletin(examen_id: int):
-    """Alias pour récupérer le bulletin d'un examen."""
-    return get_bulletin(examen_id)
-
-
-# ═════════════════════════════════════════════════════════════
-# ROUTES — EXPORT FICHES
-# ═════════════════════════════════════════════════════════════
-
-@app.post("/api/exporter")
-def route_exporter_html(d: DemandeExport):
-    html = exporter_fiche_html(d.questions, d.titre,
-                                d.avec_corrige, d.enseignant, d.niveau)
-    return HTMLResponse(content=html)
-
-@app.post("/api/exporter/json")
-def route_exporter_json(d: DemandeExport):
-    contenu = exp_json(d.questions, d.titre,
-                       d.avec_corrige, d.enseignant, d.niveau)
-    return Response(content=contenu, media_type="application/json",
-        headers={"Content-Disposition": 'attachment; filename="fiche_rali_dem.json"'})
-
-@app.post("/api/exporter/csv")
-def route_exporter_csv(d: DemandeExport):
-    contenu = exp_csv(d.questions, d.titre,
-                      d.avec_corrige, d.enseignant, d.niveau)
-    return Response(content=contenu.encode("utf-8-sig"), media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="fiche_rali_dem.csv"'})
-
-@app.post("/api/exporter/moodle")
-def route_exporter_moodle(d: DemandeExport):
-    contenu = exporter_moodle_xml(d.questions, d.titre,
-                                   d.avec_corrige, d.enseignant, d.niveau)
-    return Response(content=contenu.encode("utf-8"), media_type="application/xml",
-        headers={"Content-Disposition": 'attachment; filename="fiche_rali_dem.xml"'})
-
-
-# ═════════════════════════════════════════════════════════════
-# ROUTES — AUTHENTIFICATION
-# ═════════════════════════════════════════════════════════════
-
-@app.post("/api/auth/inscription")
-def route_inscription(d: DemandeInscription):
-    try:
-        return inscrire(d.nom, d.prenom, d.email, d.mot_de_passe,
-                        d.niveau, d.institution, d.role)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.post("/api/auth/connexion")
-def route_connexion(d: DemandeConnexion):
-    try:
-        return connecter(d.email, d.mot_de_passe)
-    except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e))
-
-@app.post("/api/auth/deconnexion")
-def route_deconnexion(authorization: Optional[str] = Header(None)):
-    token = (authorization or "").replace("Bearer ", "").strip()
-    return deconnecter(token)
-
-@app.get("/api/auth/profil")
-def route_profil(authorization: Optional[str] = Header(None)):
-    payload = _verifier_auth(authorization)
-    return get_utilisateur(payload["user_id"])
-
-@app.put("/api/auth/mot_de_passe")
-def route_changer_mdp(d: DemandeMdp,
-                       authorization: Optional[str] = Header(None)):
-    payload = _verifier_auth(authorization)
-    try:
-        return changer_mot_de_passe(payload["user_id"], d.ancien_mdp, d.nouveau_mdp)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-# ═════════════════════════════════════════════════════════════
-# ROUTES — ADMIN UTILISATEURS
-# ═════════════════════════════════════════════════════════════
-
-@app.get("/api/admin/utilisateurs")
-def route_tous_utilisateurs(authorization: Optional[str] = Header(None)):
-    _verifier_admin(authorization)
-    return get_tous_utilisateurs()
-
-@app.put("/api/admin/utilisateurs/{user_id}/role")
-def route_modifier_role(user_id: int, d: DemandeRole,
-                         authorization: Optional[str] = Header(None)):
-    payload = _verifier_admin(authorization)
-    try:
-        return modifier_role(user_id, d.nouveau_role, payload["user_id"])
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.put("/api/admin/utilisateurs/{user_id}/actif")
-def route_activer(user_id: int, actif: int = 1,
-                   authorization: Optional[str] = Header(None)):
-    payload = _verifier_admin(authorization)
-    try:
-        return activer_desactiver(user_id, bool(actif), payload["user_id"])
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-# ═════════════════════════════════════════════════════════════
-# ROUTES — TRACKING ADAPTATIF
-# ═════════════════════════════════════════════════════════════
-
-@app.post("/api/tracking/session_adaptative")
-def route_creer_sess_adapt(d: DemandeSessionAdapt,
-                             authorization: Optional[str] = Header(None)):
-    payload = _verifier_auth(authorization)
-    return creer_session_adaptative(
-        payload["user_id"], d.objectif_code,
-        d.mode_bloom, d.niveau_depart
-    )
-
-@app.post("/api/tracking/reponse_adaptative")
-def route_rep_adapt(d: DemandeRepAdapt,
-                     authorization: Optional[str] = Header(None)):
-    payload = _verifier_auth(authorization)
-    uid = payload["user_id"]
-    print(f"[TRACKING] reponse_adaptative: user={uid} session={d.session_id} obj={d.objectif_code} correct={d.est_correct}")
-    try:
-        result = enregistrer_reponse_adaptative(
-            d.session_id, uid,
-            d.objectif_code, d.mode_bloom, d.niveau_complexite,
-            d.enonce, d.reponse_apprenant, d.reponse_correcte,
-            d.est_correct, d.ert_secondes, d.score_question
+    ''')
+
+    # Historique des réponses dans une session adaptative
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS historique_adaptatif (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id      INTEGER NOT NULL
+                            REFERENCES sessions_adaptatives(id),
+            question_id     INTEGER,
+            objectif_code   TEXT    NOT NULL,
+            niveau          TEXT    NOT NULL,
+            enonce          TEXT    NOT NULL,
+            reponse_correcte TEXT   NOT NULL,
+            reponse_apprenant TEXT  NOT NULL,
+            est_correct     INTEGER NOT NULL DEFAULT 0,
+            ert_secondes    REAL,
+            score_question  REAL,
+            evenement       TEXT,
+            date_reponse    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-        print(f"[TRACKING] ✅ enregistré: {result}")
-        return result
-    except Exception as e:
-        print(f"[TRACKING] ❌ erreur: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    ''')
 
-@app.post("/api/tracking/terminer_adaptative")
-def route_terminer_adapt(d: DemandeTerminerAdapt,
-                          authorization: Optional[str] = Header(None)):
-    _verifier_auth(authorization)
-    return terminer_session_adaptative(d.session_id, d.niveau_final)
-
-
-# ═════════════════════════════════════════════════════════════
-# ROUTES — TRACKING EXAMEN
-# ═════════════════════════════════════════════════════════════
-
-@app.post("/api/tracking/session_examen")
-def route_creer_sess_exam(d: DemandeSessionExam,
-                            authorization: Optional[str] = Header(None)):
-    payload = _verifier_auth(authorization)
-    return creer_session_examen(
-        payload["user_id"], d.titre,
-        d.objectifs_codes, d.mode_bloom, d.niveau
-    )
-
-@app.post("/api/tracking/reponse_examen")
-def route_rep_exam_track(d: DemandeRepExamTrack,
-                          authorization: Optional[str] = Header(None)):
-    payload = _verifier_auth(authorization)
-    return track_rep_exam(
-        d.session_examen_id, payload["user_id"],
-        d.objectif_code, d.mode_bloom, d.niveau_complexite,
-        d.enonce, d.reponse_apprenant, d.reponse_correcte,
-        d.est_correct, d.ert_secondes, d.score_question,
-        d.temps_reponse_s
-    )
-
-@app.post("/api/tracking/terminer_examen/{session_examen_id}")
-def route_terminer_exam_track(session_examen_id: int,
-                                authorization: Optional[str] = Header(None)):
-    _verifier_auth(authorization)
-    return terminer_session_examen(session_examen_id)
-
-
-# ═════════════════════════════════════════════════════════════
-# ROUTES — HISTORIQUE APPRENANT
-# ═════════════════════════════════════════════════════════════
-
-@app.get("/api/tracking/historique")
-def route_historique(authorization: Optional[str] = Header(None)):
-    payload = _verifier_auth(authorization)
-    uid = payload["user_id"]
-    print(f"[HISTORIQUE] user={uid}")
-
-    import sqlite3
-    db_path = os.path.join(os.path.dirname(__file__), '..', 'database', 'rali_dem.db')
-    conn = sqlite3.connect(db_path)
-
-    # Compter directement dans la BD
-    nb_rep = conn.execute("SELECT COUNT(*) FROM track_reponses_adapt WHERE utilisateur_id=?", (uid,)).fetchone()[0]
-    nb_ses = conn.execute("SELECT COUNT(*) FROM track_sessions_adapt WHERE utilisateur_id=?", (uid,)).fetchone()[0]
-    print(f"[HISTORIQUE] BD directe: {nb_rep} réponses, {nb_ses} sessions pour user={uid}")
-
-    # Vérifier structure table
-    cols = conn.execute("PRAGMA table_info(track_reponses_adapt)").fetchall()
-    print(f"[HISTORIQUE] Colonnes track_reponses_adapt: {[c[1] for c in cols]}")
+    conn.commit()
     conn.close()
 
-    hist    = get_historique_apprenant(uid)
-    par_obj = get_resultats_par_objectif(uid)
-    hist["par_objectif"] = par_obj
-    print(f"[HISTORIQUE] Résultat: sessions={len(hist.get('sessions_adaptatives',[]))}, par_obj={len(par_obj)}")
-    return hist
 
-@app.get("/api/tracking/historique/{user_id}")
-def route_historique_admin(user_id: int,
-                             authorization: Optional[str] = Header(None)):
-    _verifier_admin(authorization)
-    hist    = get_historique_apprenant(user_id)
-    par_obj = get_resultats_par_objectif(user_id)
-    hist["par_objectif"] = par_obj
-    return hist
+# ─────────────────────────────────────────────────────────────
+# GESTION DES SESSIONS
+# ─────────────────────────────────────────────────────────────
 
+def creer_session(
+    objectif_code: str,
+    mode_bloom:    str  = "comprehension",
+    apprenant:     str  = "anonyme",
+    niveau_depart: str  = "faible",
+) -> dict:
+    """
+    Crée une nouvelle session adaptative et retourne son état initial.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
 
-# ═════════════════════════════════════════════════════════════
-# ROUTES — STATISTIQUES (admin)
-# ═════════════════════════════════════════════════════════════
+    cursor.execute('''
+        INSERT INTO sessions_adaptatives
+        (apprenant, objectif_code, mode_bloom, niveau_actuel)
+        VALUES (?, ?, ?, ?)
+    ''', (apprenant, objectif_code, mode_bloom, niveau_depart))
 
-@app.get("/api/stats/tableau_bord")
-def route_tableau_bord(authorization: Optional[str] = Header(None)):
-    _verifier_admin(authorization)
-    return get_tableau_bord()
+    conn.commit()
+    session_id = cursor.lastrowid
+    conn.close()
 
-@app.get("/api/stats/objectifs")
-def route_stats_objectifs(authorization: Optional[str] = Header(None)):
-    _verifier_admin(authorization)
-    return get_stats_objectifs()
-
-@app.get("/api/stats/cohorte")
-def route_stats_cohorte(niveau: Optional[str] = None,
-                         institution: Optional[str] = None,
-                         authorization: Optional[str] = Header(None)):
-    _verifier_admin(authorization)
-    return get_stats_cohorte(niveau, institution)
-
-@app.get("/api/stats/apprenant/{user_id}")
-def route_stats_apprenant(user_id: int,
-                            authorization: Optional[str] = Header(None)):
-    _verifier_admin(authorization)
-    try:
-        return get_stats_apprenant(user_id)
-    except ValueError as e:
-        raise HTTPException(404, str(e))
-
-@app.get("/api/stats/correlations")
-def route_correlations(authorization: Optional[str] = Header(None)):
-    _verifier_admin(authorization)
-    return get_matrice_correlations()
-
-@app.get("/api/stats/progression")
-def route_progression(granularite: str = "semaine",
-                       authorization: Optional[str] = Header(None)):
-    _verifier_admin(authorization)
-    return get_progression_temporelle(granularite)
-
-# ── Exports stats ─────────────────────────────────────────────
-
-@app.get("/api/stats/exporter/json")
-def route_export_stats_json(authorization: Optional[str] = Header(None)):
-    _verifier_admin(authorization)
-    contenu = exporter_stats_json('all')
-    return Response(content=contenu, media_type="application/json",
-        headers={"Content-Disposition": 'attachment; filename="rali_dem_stats.json"'})
-
-@app.get("/api/stats/exporter/csv/{type_stats}")
-def route_export_stats_csv(type_stats: str,
-                             authorization: Optional[str] = Header(None)):
-    _verifier_admin(authorization)
-    contenu = exporter_stats_csv(type_stats)
-    return Response(content=contenu.encode("utf-8-sig"), media_type="text/csv",
-        headers={"Content-Disposition":
-                 f'attachment; filename="rali_dem_{type_stats}.csv"'})
-
-@app.get("/api/stats/exporter/spss")
-def route_export_stats_spss(authorization: Optional[str] = Header(None)):
-    _verifier_admin(authorization)
-    try:
-        contenu = exporter_stats_spss('reponses')
-        return Response(content=contenu,
-            media_type="application/octet-stream",
-            headers={"Content-Disposition":
-                     'attachment; filename="rali_dem_stats.sav"'})
-    except ImportError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "session_id":    session_id,
+        "apprenant":     apprenant,
+        "objectif_code": objectif_code,
+        "mode_bloom":    mode_bloom,
+        "niveau_actuel": niveau_depart,
+        "nb_bonnes":     0,
+        "nb_mauvaises":  0,
+        "bonnes_consecutives":   0,
+        "mauvaises_consecutives": 0,
+        "nb_questions_total": 0,
+        "score_global":  0.0,
+        "statut":        "en_cours",
+        "message":       f"Session démarrée au niveau {niveau_depart.upper()}. Bonne chance !",
+    }
 
 
-# ═════════════════════════════════════════════════════════════
-# LANCEMENT
-# ═════════════════════════════════════════════════════════════
+def get_session(session_id: int) -> dict:
+    """Retourne l'état actuel d'une session."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT * FROM sessions_adaptatives WHERE id = ?',
+        (session_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        raise ValueError(f"Session {session_id} introuvable.")
+    return dict(row)
+
+
+# ─────────────────────────────────────────────────────────────
+# MOTEUR ADAPTATIF PRINCIPAL
+# ─────────────────────────────────────────────────────────────
+
+def enregistrer_reponse(
+    session_id:        int,
+    enonce:            str,
+    reponse_correcte:  str,
+    reponse_apprenant: str,
+    est_correct:       bool,
+    ert_secondes:      float = 0.0,
+    score_question:    float = 0.0,
+    question_id:       int   = None,
+) -> dict:
+    """
+    Enregistre une réponse et met à jour le niveau si nécessaire.
+
+    Retourne l'état mis à jour de la session avec :
+        - le nouveau niveau
+        - l'événement (montée / descente / maintien)
+        - le message à afficher à l'apprenant
+        - les statistiques actualisées
+    """
+    session = get_session(session_id)
+
+    if session["statut"] != "en_cours":
+        raise ValueError("Cette session est terminée.")
+
+    # ── Mise à jour des compteurs ─────────────────────────────
+    nb_bonnes    = session["nb_bonnes"]
+    nb_mauvaises = session["nb_mauvaises"]
+    bonnes_cons  = session["bonnes_consecutives"]
+    mauvaises_cons = session["mauvaises_consecutives"]
+    niveau       = session["niveau_actuel"]
+    nb_total     = session["nb_questions_total"] + 1
+    score_cumul  = session["score_global"]
+
+    if est_correct:
+        nb_bonnes   += 1
+        bonnes_cons += 1
+        mauvaises_cons = 0
+        score_cumul += score_question
+    else:
+        nb_mauvaises   += 1
+        mauvaises_cons += 1
+        bonnes_cons     = 0
+
+    # ── Décision d'ajustement du niveau ──────────────────────
+    ancien_niveau = niveau
+    evenement     = "maintien"
+    message       = MESSAGES_NIVEAU["maintien"]
+
+    if bonnes_cons >= SEUIL_MONTEE:
+        # Tentative de montée
+        idx = NIVEAUX.index(niveau)
+        if idx < len(NIVEAUX) - 1:
+            niveau      = NIVEAUX[idx + 1]
+            evenement   = "montee"
+            cle         = f"{ancien_niveau}→{niveau}"
+            message     = MESSAGES_NIVEAU["montee"].get(
+                cle, f"🎉 Niveau supérieur atteint : {niveau.upper()} !"
+            )
+            bonnes_cons = 0   # réinitialiser le compteur
+
+    elif mauvaises_cons >= SEUIL_DESCENTE:
+        # Tentative de descente
+        idx = NIVEAUX.index(niveau)
+        if idx > 0:
+            niveau         = NIVEAUX[idx - 1]
+            evenement      = "descente"
+            cle            = f"{ancien_niveau}→{niveau}"
+            message        = MESSAGES_NIVEAU["descente"].get(
+                cle, f"💪 Retour au niveau {niveau.upper()} pour consolider."
+            )
+            mauvaises_cons = 0   # réinitialiser le compteur
+
+    # ── Score global (moyenne pondérée) ──────────────────────
+    score_global = round(score_cumul / nb_total, 2) if nb_total > 0 else 0.0
+
+    # ── Sauvegarder dans l'historique ────────────────────────
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        INSERT INTO historique_adaptatif
+        (session_id, question_id, objectif_code, niveau, enonce,
+         reponse_correcte, reponse_apprenant, est_correct,
+         ert_secondes, score_question, evenement)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        session_id,
+        question_id,
+        session["objectif_code"],
+        ancien_niveau,
+        enonce,
+        reponse_correcte,
+        reponse_apprenant,
+        int(est_correct),
+        ert_secondes,
+        score_question,
+        evenement,
+    ))
+
+    # ── Mettre à jour la session ──────────────────────────────
+    cursor.execute('''
+        UPDATE sessions_adaptatives SET
+            niveau_actuel          = ?,
+            nb_bonnes              = ?,
+            nb_mauvaises           = ?,
+            bonnes_consecutives    = ?,
+            mauvaises_consecutives = ?,
+            nb_questions_total     = ?,
+            score_global           = ?
+        WHERE id = ?
+    ''', (
+        niveau, nb_bonnes, nb_mauvaises,
+        bonnes_cons, mauvaises_cons,
+        nb_total, score_global,
+        session_id,
+    ))
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "session_id":              session_id,
+        "niveau_actuel":           niveau,
+        "niveau_precedent":        ancien_niveau,
+        "evenement":               evenement,
+        "message":                 message,
+        "est_correct":             est_correct,
+        "nb_bonnes":               nb_bonnes,
+        "nb_mauvaises":            nb_mauvaises,
+        "bonnes_consecutives":     bonnes_cons,
+        "mauvaises_consecutives":  mauvaises_cons,
+        "nb_questions_total":      nb_total,
+        "score_global":            score_global,
+        "progression":             _calculer_progression(
+                                       nb_bonnes, nb_total
+                                   ),
+    }
+
+
+def terminer_session(session_id: int) -> dict:
+    """Clôture une session et retourne le bilan final."""
+    session = get_session(session_id)
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE sessions_adaptatives
+        SET statut = "terminee", date_fin = CURRENT_TIMESTAMP
+        WHERE id = ?
+    ''', (session_id,))
+
+    # Récupérer l'historique complet
+    cursor.execute('''
+        SELECT * FROM historique_adaptatif
+        WHERE session_id = ?
+        ORDER BY date_reponse
+    ''', (session_id,))
+    historique = [dict(r) for r in cursor.fetchall()]
+
+    conn.commit()
+    conn.close()
+
+    nb_total    = session["nb_questions_total"]
+    nb_bonnes   = session["nb_bonnes"]
+    score       = session["score_global"]
+    niveau_final = session["niveau_actuel"]
+
+    # Message de bilan
+    taux = (nb_bonnes / nb_total * 100) if nb_total > 0 else 0
+    if taux >= 80:
+        appreciation = "🏆 Excellent travail ! Vous maîtrisez cet objectif."
+    elif taux >= 60:
+        appreciation = "👍 Bon travail ! Quelques points à revoir."
+    elif taux >= 40:
+        appreciation = "📚 Des progrès à faire. Revoyez les règles de base."
+    else:
+        appreciation = "💡 Cet objectif nécessite plus de pratique. Ne vous découragez pas !"
+
+    return {
+        "session_id":    session_id,
+        "objectif_code": session["objectif_code"],
+        "apprenant":     session["apprenant"],
+        "niveau_final":  niveau_final,
+        "nb_questions":  nb_total,
+        "nb_bonnes":     nb_bonnes,
+        "nb_mauvaises":  session["nb_mauvaises"],
+        "taux_reussite": round(taux, 1),
+        "score_global":  score,
+        "appreciation":  appreciation,
+        "historique":    historique,
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# UTILITAIRES
+# ─────────────────────────────────────────────────────────────
+
+def _calculer_progression(nb_bonnes: int, nb_total: int) -> dict:
+    """Calcule la progression vers le prochain changement de niveau."""
+    taux = round((nb_bonnes / nb_total * 100), 1) if nb_total > 0 else 0.0
+    return {
+        "taux_reussite":         taux,
+        "bonnes_pour_monter":    SEUIL_MONTEE,
+        "mauvaises_pour_descendre": SEUIL_DESCENTE,
+    }
+
+
+def get_historique_session(session_id: int) -> list:
+    """Retourne l'historique complet des réponses d'une session."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM historique_adaptatif
+        WHERE session_id = ?
+        ORDER BY date_reponse
+    ''', (session_id,))
+    result = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return result
+
+
+def get_sessions_apprenant(apprenant: str) -> list:
+    """Retourne toutes les sessions d'un apprenant."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM sessions_adaptatives
+        WHERE apprenant = ?
+        ORDER BY date_debut DESC
+    ''', (apprenant,))
+    result = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return result
+
+
+# ─────────────────────────────────────────────────────────────
+# TEST
+# ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    import sys
+    sys.path.insert(0, os.path.dirname(__file__))
+
+    print("=== Test du parcours adaptatif ===\n")
+
+    # Initialiser les tables
+    init_tables_adaptatives()
+
+    # Créer une session
+    session = creer_session(
+        objectif_code = "NEG_IMP",
+        mode_bloom    = "comprehension",
+        apprenant     = "etudiant_test",
+        niveau_depart = "faible",
+    )
+    sid = session["session_id"]
+    print(f"Session créée : ID={sid}")
+    print(f"Niveau départ : {session['niveau_actuel'].upper()}")
+    print(f"Message : {session['message']}\n")
+
+    # Simuler 8 réponses
+    reponses = [
+        (True,  "Bonne réponse 1"),
+        (True,  "Bonne réponse 2"),
+        (True,  "Bonne réponse 3 → devrait monter au niveau MOYEN"),
+        (False, "Mauvaise réponse 1"),
+        (True,  "Bonne réponse"),
+        (True,  "Bonne réponse"),
+        (True,  "Bonne réponse → devrait monter au niveau ÉLEVÉ"),
+        (False, "Mauvaise réponse 1"),
+        (False, "Mauvaise réponse 2 → devrait descendre au niveau MOYEN"),
+    ]
+
+    for i, (correct, label) in enumerate(reponses, 1):
+        etat = enregistrer_reponse(
+            session_id        = sid,
+            enonce            = f"Question test {i}",
+            reponse_correcte  = "bonne réponse",
+            reponse_apprenant = "bonne réponse" if correct else "mauvaise",
+            est_correct       = correct,
+            ert_secondes      = 45.0,
+            score_question    = 5.0 if correct else 0.0,
+        )
+        symbole = "✅" if correct else "❌"
+        print(f"  Q{i} {symbole} {label}")
+        print(f"     Niveau : {etat['niveau_actuel'].upper()} "
+              f"| Événement : {etat['evenement']}")
+        if etat["evenement"] != "maintien":
+            print(f"     → {etat['message']}")
+        print()
+
+    # Bilan final
+    bilan = terminer_session(sid)
+    print("─" * 50)
+    print("BILAN FINAL")
+    print(f"  Questions : {bilan['nb_questions']}")
+    print(f"  Bonnes    : {bilan['nb_bonnes']}")
+    print(f"  Taux      : {bilan['taux_reussite']}%")
+    print(f"  Score     : {bilan['score_global']}/10")
+    print(f"  Niveau    : {bilan['niveau_final'].upper()}")
+    print(f"  {bilan['appreciation']}")

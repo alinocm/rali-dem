@@ -144,8 +144,13 @@ def startup():
     init_database()
     init_tables_auth()
     init_tables_tracking()
-    init_tables_adaptatives()
-    init_tables_examen()
+
+    # Initialisation des tables adaptatives et examen
+    # (import inline pour éviter les conflits de nommage)
+    import adaptive as _adp
+    import exam     as _exam
+    _adp.init_tables_adaptatives()
+    _exam.init_tables_examen()
 
     # Vérifier et créer l'admin si absent
     try:
