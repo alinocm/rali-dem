@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RALI-DEM — Générateur de questions de logique</title>
+  <title>RALI-DEM v2.1</title>
   <style>
     /* ── Reset & variables ── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -397,6 +397,9 @@
         </div>
         <div class="nav-item" onclick="showSection('admin-apprenants', this)">
           <span class="icon">👥</span> Apprenants
+        </div>
+        <div class="nav-item" onclick="showSection('admin-experimentation', this)">
+          <span class="icon">🧪</span> Expérimentation
         </div>
       </div>
 
@@ -2361,6 +2364,260 @@ function _creerSessionLibre() {
     console.warn("[tracking] Session libre (non bloquant):", e.message);
   });
 }
+
+
+// ══════════════════════════════════════════════════════════════
+// EXPÉRIMENTATION — Fonctions admin
+// ══════════════════════════════════════════════════════════════
+
+var EXP_PARTICIPANTS = []; // cache local
+
+async function chargerStatsExp() {
+  try {
+    const r = await apiAuth('GET', '/exp/stats');
+    document.getElementById('exp-nb-part').textContent = r.nb_participants || 0;
+    document.getElementById('exp-nb-sess').textContent = r.nb_sessions_terminees || 0;
+    document.getElementById('exp-nb-rep').textContent  = r.nb_reponses_total || 0;
+    // Compter les évaluations qualitatives via les participants
+    document.getElementById('exp-nb-eval').textContent = r.nb_sessions_terminees || 0;
+  } catch(e) {
+    console.warn('Stats exp:', e);
+  }
+}
+
+async function chargerParticipants() {
+  const div = document.getElementById('exp-participants-table');
+  div.innerHTML = '<div style="padding:20px;text-align:center;color:#666">Chargement...</div>';
+  try {
+    const liste = await apiAuth('GET', '/exp/participants');
+    console.log('[exp] Participants recus:', liste ? liste.length : 'null', liste);
+    EXP_PARTICIPANTS = liste || [];
+    afficherTableauParticipants(EXP_PARTICIPANTS);
+    chargerStatsExp();
+  } catch(e) {
+    console.error('[exp] Erreur participants:', e);
+    div.innerHTML = '<div style="color:red;padding:16px">Erreur chargement : '
+      + e.message + '<br><small>Verifiez la console (F12)</small></div>';
+  }
+}
+
+function afficherTableauParticipants(liste) {
+  const div = document.getElementById('exp-participants-table');
+  if (!liste || liste.length === 0) {
+    div.innerHTML = '<div style="padding:20px;text-align:center;color:#999">'
+      + 'Aucun participant pour le moment.</div>';
+    return;
+  }
+
+  let html = '<div style="overflow-x:auto">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:.9rem">'
+    + '<thead><tr style="background:#F8F9FA;border-bottom:2px solid #E5E7EB">'
+    + '<th style="padding:10px;text-align:left">Code</th>'
+    + '<th style="padding:10px;text-align:left">Nom complet</th>'
+    + '<th style="padding:10px;text-align:left">Email</th>'
+    + '<th style="padding:10px;text-align:left">Niveau</th>'
+    + '<th style="padding:10px;text-align:left">Établissement</th>'
+    + '<th style="padding:10px;text-align:center">Réponses</th>'
+    + '<th style="padding:10px;text-align:center">Réussite</th>'
+    + '<th style="padding:10px;text-align:center">Tps moy.</th>'
+    + '<th style="padding:10px;text-align:center">Détail</th>'
+    + '</tr></thead><tbody>';
+
+  liste.forEach(function(p, i) {
+    const taux = p.taux_reussite != null
+      ? Math.round(p.taux_reussite * 100) : 0;
+    const tps  = p.temps_moyen ? Math.round(p.temps_moyen) : 0;
+    const bg   = i % 2 === 0 ? '#FFFFFF' : '#F9FAFB';
+    const nom  = ((p.prenom||'') + ' ' + (p.nom||'')).trim() || '—';
+
+    html += '<tr style="background:' + bg + ';border-bottom:1px solid #F3F4F6">'
+      + '<td style="padding:10px;font-weight:600;color:#1565C0">'
+      + (p.code_anonyme||p.code||'—') + '</td>'
+      + '<td style="padding:10px">' + nom + '</td>'
+      + '<td style="padding:10px;font-size:.85rem;color:#555">'
+      + (p.email||'—') + '</td>'
+      + '<td style="padding:10px">' + (p.niveau_etudes||p.niveau||'—') + '</td>'
+      + '<td style="padding:10px">' + (p.etablissement||'—') + '</td>'
+      + '<td style="padding:10px;text-align:center">' + (p.nb_reponses||0) + '</td>'
+      + '<td style="padding:10px;text-align:center">'
+      + '<span style="background:' + (taux>=70?'#E8F5E9':taux>=50?'#FFF3E0':'#FFEBEE')
+      + ';color:' + (taux>=70?'#2E7D32':taux>=50?'#E65100':'#C62828')
+      + ';padding:3px 10px;border-radius:20px;font-weight:600">'
+      + taux + '%</span></td>'
+      + '<td style="padding:10px;text-align:center">' + tps + 's</td>'
+      + '<td style="padding:10px;text-align:center">'
+      + '<button id="btn-voir-' + i + '"'
+      + ' style="padding:5px 12px;border:1.5px solid #1565C0;border-radius:6px;'
+      + 'background:white;color:#1565C0;cursor:pointer;font-size:.85rem">Voir</button>'
+      + '</td></tr>';
+  });
+
+  html += '</tbody></table></div>';
+  html += '<div style="margin-top:10px;font-size:.85rem;color:#999">'
+    + liste.length + ' participant(s) affiché(s)</div>';
+
+  div.innerHTML = html;
+
+  // Attacher les event listeners APRES injection du HTML
+  // (onclick inline ne fonctionne pas sur les elements generes dynamiquement)
+  liste.forEach(function(p, i) {
+    var btn = document.getElementById('btn-voir-' + i);
+    if (btn) {
+      (function(code) {
+        btn.addEventListener('click', function() {
+          voirDetailParticipant(code);
+        });
+      })(p.code_anonyme || p.code || '');
+    }
+  });
+}
+
+function filtrerParticipants() {
+  const q = document.getElementById('exp-recherche').value.toLowerCase();
+  const filtre = EXP_PARTICIPANTS.filter(function(p) {
+    return (p.code_anonyme||'').toLowerCase().includes(q)
+      || (p.nom||'').toLowerCase().includes(q)
+      || (p.prenom||'').toLowerCase().includes(q)
+      || (p.email||'').toLowerCase().includes(q)
+      || (p.niveau_etudes||'').toLowerCase().includes(q)
+      || (p.etablissement||'').toLowerCase().includes(q);
+  });
+  afficherTableauParticipants(filtre);
+}
+
+async function voirDetailParticipant(code) {
+  const modal   = document.getElementById('exp-modal');
+  const mContent= document.getElementById('exp-modal-content');
+
+  if (!code) return;
+
+  // Afficher le modal avec loader
+  modal.style.display = 'flex';
+  mContent.innerHTML = '<div style="text-align:center;padding:40px;color:#666">Chargement...</div>';
+
+  try {
+    const d = await apiAuth('GET', '/exp/participant/' + encodeURIComponent(code));
+    const p = d.participant;
+    const s = d.stats;
+    const e = d.evaluation;
+    const r = d.reponses;
+
+    // ── En-tête participant ──────────────────────────────
+    let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'
+      + '<h3 style="color:#1565C0;margin:0">Participant : ' + code + '</h3>'
+      + '<button onclick="fermerExpModal()" style="background:none;border:none;'
+      + 'font-size:1.4rem;cursor:pointer;color:#666">&times;</button></div>'
+
+      // Stats résumé
+      + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px">'
+      + '<div style="background:#E3F2FD;border-radius:8px;padding:10px;text-align:center">'
+      + '<div style="font-size:1.3rem;font-weight:700;color:#1565C0">' + r.length + '</div>'
+      + '<div style="font-size:.75rem;color:#555">Réponses</div></div>'
+      + '<div style="background:#E8F5E9;border-radius:8px;padding:10px;text-align:center">'
+      + '<div style="font-size:1.3rem;font-weight:700;color:#2E7D32">' + s.taux_reussite + '%</div>'
+      + '<div style="font-size:.75rem;color:#555">Réussite</div></div>'
+      + '<div style="background:#FFF3E0;border-radius:8px;padding:10px;text-align:center">'
+      + '<div style="font-size:1.3rem;font-weight:700;color:#E65100">' + s.temps_moyen + 's</div>'
+      + '<div style="font-size:.75rem;color:#555">Tps moyen</div></div>'
+      + '<div style="background:#F3E5F5;border-radius:8px;padding:10px;text-align:center">'
+      + '<div style="font-size:1.3rem;font-weight:700;color:#6A1B9A">' + s.ert_moyen + 's</div>'
+      + '<div style="font-size:.75rem;color:#555">ERT moyen</div></div>'
+      + '</div>'
+
+      // Infos profil
+      + '<div style="background:#F8F9FA;border-radius:8px;padding:12px;margin-bottom:14px;font-size:.9rem">'
+      + '<b>' + ((p.prenom||'') + ' ' + (p.nom||'')).trim() + '</b>'
+      + ' · ' + (p.email||'—')
+      + ' · ' + (p.niveau_etudes||'—')
+      + ' · ' + (p.etablissement||'—')
+      + '</div>';
+
+    // ── Tableau des réponses ─────────────────────────────
+    if (r.length > 0) {
+      html += '<div style="font-weight:700;margin-bottom:8px;color:#374151">Détail des réponses</div>'
+        + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.82rem">'
+        + '<thead><tr style="background:#F3F4F6">'
+        + '<th style="padding:7px;text-align:left">Objectif</th>'
+        + '<th style="padding:7px;text-align:left">Mode</th>'
+        + '<th style="padding:7px;text-align:center">ERT prédit</th>'
+        + '<th style="padding:7px;text-align:center">Tps réel</th>'
+        + '<th style="padding:7px;text-align:center">Résultat</th>'
+        + '<th style="padding:7px;text-align:left">Choix</th>'
+        + '</tr></thead><tbody>';
+
+      r.forEach(function(rep, i) {
+        const bg  = i % 2 === 0 ? '#fff' : '#F9FAFB';
+        const ok  = rep.est_correct === 1;
+        const diff= Math.abs((rep.temps_reel_s||0) - (rep.ert_predit_s||0));
+        html += '<tr style="background:' + bg + ';border-bottom:1px solid #F3F4F6">'
+          + '<td style="padding:7px;font-weight:600">' + (rep.objectif_code||'—') + '</td>'
+          + '<td style="padding:7px">' + (rep.mode_bloom||'—') + '</td>'
+          + '<td style="padding:7px;text-align:center">' + (rep.ert_predit_s||0) + 's</td>'
+          + '<td style="padding:7px;text-align:center;color:' + (diff > 15 ? '#E65100' : '#2E7D32') + '">'
+          + (Math.round(rep.temps_reel_s)||0) + 's</td>'
+          + '<td style="padding:7px;text-align:center">'
+          + (ok ? '<span style="color:#2E7D32;font-weight:700">✓</span>'
+               : '<span style="color:#EF4444;font-weight:700">✗</span>') + '</td>'
+          + '<td style="padding:7px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+          + (rep.distracteur_choisi||'—') + '</td>'
+          + '</tr>';
+      });
+      html += '</tbody></table></div>';
+    } else {
+      html += '<div style="color:#999;padding:16px;text-align:center">Aucune réponse enregistrée.</div>';
+    }
+
+    // ── Évaluation qualitative ───────────────────────────
+    if (e) {
+      const criteres = [
+        ['Grammaticalité', e.grammaticalite],
+        ['Naturalité',     e.naturalite],
+        ['Clarté',         e.clarte],
+        ['Plausib. distracteurs', e.plausibilite_dist],
+        ['Pertinence obj.', e.pertinence_obj],
+        ['Alignement Bloom', e.alignement_bloom],
+        ['Acceptabilité',  e.acceptabilite],
+        ['Utilité appr.',  e.utilite_apprentissage],
+      ];
+      html += '<div style="font-weight:700;margin:14px 0 8px;color:#374151">Évaluation qualitative</div>'
+        + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">';
+      criteres.forEach(function(c) {
+        const v = c[1] || 0;
+        const col = v >= 4 ? '#2E7D32' : v >= 3 ? '#E65100' : '#EF4444';
+        html += '<div style="background:#F8F9FA;border-radius:6px;padding:8px;text-align:center">'
+          + '<div style="font-size:1.1rem;font-weight:700;color:' + col + '">' + v + '/5</div>'
+          + '<div style="font-size:.72rem;color:#6B7280">' + c[0] + '</div></div>';
+      });
+      html += '</div>';
+      if (e.commentaire) {
+        html += '<div style="background:#FFFDE7;border-radius:6px;padding:10px;margin-top:10px;font-size:.85rem">'
+          + '<b>Commentaire :</b> ' + e.commentaire + '</div>';
+      }
+      html += '<div style="text-align:right;margin-top:10px;font-weight:700;color:#1565C0">'
+        + 'Score global : ' + (e.score_global||0) + '/5</div>';
+    }
+
+    mContent.innerHTML = html;
+
+  } catch(err) {
+    mContent.innerHTML = '<div style="color:red;padding:20px">Erreur : ' + err.message + '</div>';
+  }
+}
+
+function fermerExpModal() {
+  document.getElementById('exp-modal').style.display = 'none';
+}
+
+// Charger automatiquement quand on ouvre la section expérimentation
+const _origShowSection = showSection;
+showSection = function(id, el) {
+  _origShowSection(id, el);
+  if (id === 'admin-experimentation') {
+    chargerStatsExp();
+    chargerParticipants();
+  }
+};
+
 </script>
 
 <!-- Modal notification niveau adaptatif -->
@@ -2522,6 +2779,100 @@ function _creerSessionLibre() {
       <button class="btn btn-primary" onclick="chargerApprenants()">🔄 Actualiser</button>
     </div>
     <div id="admin-apprenants-table"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     SECTION EXPÉRIMENTATION (admin)
+══════════════════════════════════════════════ -->
+<section id="admin-experimentation" class="section">
+  <div class="page-title">🧪 Expérimentation — Collecte de données</div>
+
+  <!-- Statistiques globales -->
+  <div id="exp-tb" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:24px">
+    <div class="card" style="text-align:center">
+      <div style="font-size:32px;font-weight:800;color:#1565C0" id="exp-nb-part">—</div>
+      <div style="color:#6b7280;font-size:13px">Participants inscrits</div>
+    </div>
+    <div class="card" style="text-align:center">
+      <div style="font-size:32px;font-weight:800;color:#2E7D32" id="exp-nb-sess">—</div>
+      <div style="color:#6b7280;font-size:13px">Sessions terminées</div>
+    </div>
+    <div class="card" style="text-align:center">
+      <div style="font-size:32px;font-weight:800;color:#E65100" id="exp-nb-rep">—</div>
+      <div style="color:#6b7280;font-size:13px">Réponses collectées</div>
+    </div>
+    <div class="card" style="text-align:center">
+      <div style="font-size:32px;font-weight:800;color:#6A1B9A" id="exp-nb-eval">—</div>
+      <div style="color:#6b7280;font-size:13px">Évaluations qualitatives</div>
+    </div>
+  </div>
+
+  <!-- Exports CSV -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-title"><div class="dot"></div>📥 Télécharger les données</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin-top:12px">
+      <div style="border:1.5px solid #E3F2FD;border-radius:10px;padding:16px">
+        <div style="font-weight:700;color:#1565C0;margin-bottom:6px">⏱ Validation ERT</div>
+        <div style="font-size:.85rem;color:#666;margin-bottom:12px">
+          Temps réel vs temps prédit pour chaque réponse.<br>
+          <em>Permet de calculer r(ERT, t_réel)</em>
+        </div>
+        <button class="btn btn-primary" style="width:100%;padding:9px"
+                onclick="expExport('ert')">
+          ⬇ exp_validation_ert.csv
+        </button>
+      </div>
+      <div style="border:1.5px solid #E8F5E9;border-radius:10px;padding:16px">
+        <div style="font-weight:700;color:#2E7D32;margin-bottom:6px">🎯 Analyse des distracteurs</div>
+        <div style="font-size:.85rem;color:#666;margin-bottom:12px">
+          Distracteur choisi pour chaque question.<br>
+          <em>Permet de calculer l'indice de discrimination</em>
+        </div>
+        <button class="btn btn-primary" style="width:100%;padding:9px;background:#2E7D32"
+                onclick="expExport('distracteurs')">
+          ⬇ exp_validation_distracteurs.csv
+        </button>
+      </div>
+      <div style="border:1.5px solid #FFF3E0;border-radius:10px;padding:16px">
+        <div style="font-weight:700;color:#E65100;margin-bottom:6px">📝 Évaluations qualitatives</div>
+        <div style="font-size:.85rem;color:#666;margin-bottom:12px">
+          8 critères Likert par participant.<br>
+          <em>Remplace les tableaux 4.6 et 4.7</em>
+        </div>
+        <button class="btn btn-primary" style="width:100%;padding:9px;background:#E65100"
+                onclick="expExport('qualitatif')">
+          ⬇ exp_evaluation_qualitative.csv
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Liste des participants -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div class="card-title" style="margin:0"><div class="dot"></div>👥 Liste des participants</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="exp-recherche" placeholder="🔍 Nom, email, établissement..."
+               oninput="filtrerParticipants()"
+               style="padding:8px 12px;border:1px solid #e5e7eb;border-radius:8px;min-width:220px">
+        <button class="btn btn-primary" style="padding:8px 16px"
+                onclick="chargerParticipants()">🔄 Actualiser</button>
+      </div>
+    </div>
+    <div id="exp-participants-table"></div>
+  </div>
+
+  <!-- Détail d'un participant (modal) -->
+  <div id="exp-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);
+       z-index:1000;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:12px;padding:24px;max-width:600px;
+                width:90%;max-height:80vh;overflow-y:auto;position:relative">
+      <button onclick="fermerExpModal()"
+              style="position:absolute;top:12px;right:16px;border:none;
+                     background:none;font-size:1.4rem;cursor:pointer">✕</button>
+      <div id="exp-modal-content"></div>
+    </div>
   </div>
 </section>
 
