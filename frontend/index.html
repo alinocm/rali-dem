@@ -386,6 +386,7 @@
         <div style="font-size:12px;color:rgba(255,255,255,0.6)">Connecté en tant que</div>
         <div id="nav-user-name" style="font-weight:700;color:#fff;font-size:13px"></div>
         <div id="nav-user-role" style="font-size:11px;color:#a78bfa"></div>
+        <button onclick="showSection('mot-de-passe', null)" style="margin-top:6px;padding:4px 10px;background:rgba(255,255,255,0.1);border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:11px;width:100%">🔑 Changer mon mot de passe</button>
         <button onclick="deconnecter()" style="margin-top:6px;padding:4px 10px;background:rgba(255,255,255,0.1);border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:11px;width:100%">🚪 Déconnexion</button>
       </div>
 
@@ -956,7 +957,8 @@ function showSection(id, navEl) {
     adaptatif:"Parcours adaptatif", examen:"Mode examen",
     historique:"Mon historique", rapport:"Rapport d'erreurs",
     export:"Exporter une fiche",
-    "admin-stats":"Statistiques", "admin-apprenants":"Apprenants"
+    "admin-stats":"Statistiques", "admin-apprenants":"Apprenants",
+    "admin-experimentation":"Expérimentation", "mot-de-passe":"Mot de passe"
   };
   if ($("topbar-title")) $("topbar-title").textContent = titres[id] || id;
 
@@ -2367,6 +2369,28 @@ function _creerSessionLibre() {
 
 
 // ══════════════════════════════════════════════════════════════
+// CHANGEMENT DE MOT DE PASSE
+// ══════════════════════════════════════════════════════════════
+async function changerMotDePasse() {
+  const anc = document.getElementById('mdp-ancien').value;
+  const nv  = document.getElementById('mdp-nouveau').value;
+  const cf  = document.getElementById('mdp-confirm').value;
+  const msg = document.getElementById('mdp-message');
+  const dire = function(t, ok) { msg.textContent = t; msg.style.color = ok ? '#10b981' : '#ef4444'; msg.style.display = 'block'; };
+  if (!auth.token) return dire('Connectez-vous d\'abord.');
+  if (nv.length < 10) return dire('Le nouveau mot de passe doit faire au moins 10 caractères.');
+  if (nv !== cf) return dire('Les deux nouveaux mots de passe ne sont pas identiques.');
+  if (nv === anc) return dire('Le nouveau mot de passe doit être différent de l\'actuel.');
+  try {
+    await apiAuth('PUT', '/auth/mot_de_passe', { ancien_mdp: anc, nouveau_mdp: nv });
+    ['mdp-ancien', 'mdp-nouveau', 'mdp-confirm'].forEach(function(id) { document.getElementById(id).value = ''; });
+    dire('✓ Mot de passe modifié. Utilisez-le à votre prochaine connexion.', true);
+  } catch (e) {
+    dire(e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
 // EXPÉRIMENTATION — Fonctions admin
 // ══════════════════════════════════════════════════════════════
 
@@ -2375,13 +2399,146 @@ var EXP_PARTICIPANTS = []; // cache local
 async function chargerStatsExp() {
   try {
     const r = await apiAuth('GET', '/exp/stats');
+    const sv2 = r.sessions_v2 || {};
     document.getElementById('exp-nb-part').textContent = r.nb_participants || 0;
-    document.getElementById('exp-nb-sess').textContent = r.nb_sessions_terminees || 0;
-    document.getElementById('exp-nb-rep').textContent  = r.nb_reponses_total || 0;
-    // Compter les évaluations qualitatives via les participants
-    document.getElementById('exp-nb-eval').textContent = r.nb_sessions_terminees || 0;
+    document.getElementById('exp-nb-sess').textContent = sv2.terminee || 0;
+    document.getElementById('exp-nb-cours').textContent = sv2.en_cours || 0;
+    document.getElementById('exp-nb-rep').textContent  = r.nb_reponses_v2 || 0;
   } catch(e) {
     console.warn('Stats exp:', e);
+  }
+}
+
+// ── Téléchargements (avec l'en-tête d'authentification) ─────────
+var EXP_EXPORTS = {
+  reponses:        ['/exp/export/reponses',        'exp_v2_reponses.csv'],
+  items:           ['/exp/export/items',           'exp_v2_items.csv'],
+  qualitatif:      ['/exp/export/qualitatif',      'exp_v2_qualitatif.csv'],
+  v1_ert:          ['/exp/export/v1/ert',          'exp_v1_validation_ert.csv'],
+  v1_distracteurs: ['/exp/export/v1/distracteurs', 'exp_v1_validation_distracteurs.csv'],
+  v1_qualitatif:   ['/exp/export/v1/qualitatif',   'exp_v1_qualitatif.csv'],
+  banque:          ['/exp/banque/export',          'banque_items_relecture.csv'],
+};
+
+async function expExport(type) {
+  const e = EXP_EXPORTS[type];
+  if (!e) return;
+  try {
+    const r = await fetch(API + e[0], { headers: _headersAuth() });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      throw new Error(d.detail || r.statusText);
+    }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = e[1];
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  } catch(err) {
+    alert('Téléchargement impossible : ' + err.message);
+  }
+}
+
+// ── Banque d'items ───────────────────────────────────────────────
+function _banqueMessage(html, couleur) {
+  const m = document.getElementById('banque-message');
+  m.innerHTML = html;
+  m.style.color = couleur || '#374151';
+  m.style.display = html ? 'block' : 'none';
+}
+
+async function chargerEtatBanque() {
+  const div = document.getElementById('banque-etat');
+  try {
+    const e = await apiAuth('GET', '/exp/banque/etat');
+    afficherEtatBanque(e);
+  } catch(err) {
+    div.innerHTML = '<div style="color:#C62828">Erreur : ' + err.message + '</div>';
+  }
+}
+
+function afficherEtatBanque(e) {
+  const ps = e.par_statut || {};
+  const total = e.nb_combinaisons || 30;
+  const ok = e.combinaisons_validees || 0;
+  const pret = ok === total;
+  document.getElementById('banque-compteur').innerHTML =
+    '<span style="font-size:1.6rem;font-weight:800;color:' + (pret ? '#2E7D32' : '#E65100') + '">'
+    + ok + ' / ' + total + '</span> combinaisons validées'
+    + '<span style="color:#6b7280;font-size:.85rem;margin-left:12px">'
+    + (ps.candidat || 0) + ' à relire · ' + (ps.valide || 0) + ' validés · '
+    + (ps.rejete || 0) + ' rejetés</span>'
+    + (pret ? '<div style="color:#2E7D32;font-weight:600;margin-top:4px">✓ La banque est prête pour la collecte.</div>'
+            : '<div style="color:#E65100;margin-top:4px">Une combinaison sans item validé sera générée pour chaque étudiant (item non commun).</div>');
+
+  let html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.85rem">'
+    + '<thead><tr style="background:#F8F9FA;border-bottom:2px solid #E5E7EB">'
+    + '<th style="padding:8px;text-align:left">Objectif</th>'
+    + '<th style="padding:8px;text-align:left">Mode</th>'
+    + '<th style="padding:8px;text-align:center">À relire</th>'
+    + '<th style="padding:8px;text-align:center">Validés</th>'
+    + '<th style="padding:8px;text-align:center">Rejetés</th>'
+    + '<th style="padding:8px;text-align:left">Item retenu</th>'
+    + '</tr></thead><tbody>';
+  (e.combinaisons || []).forEach(function(c, i) {
+    const bg = c.item_retenu ? (i % 2 ? '#F9FAFB' : '#fff') : '#FFF8E1';
+    html += '<tr style="background:' + bg + ';border-bottom:1px solid #F3F4F6">'
+      + '<td style="padding:6px 8px;font-weight:600">' + c.objectif_code + '</td>'
+      + '<td style="padding:6px 8px">' + (c.mode_bloom === 'analyse' ? 'Analyse' : 'Compréhension') + '</td>'
+      + '<td style="padding:6px 8px;text-align:center">' + c.candidats + '</td>'
+      + '<td style="padding:6px 8px;text-align:center">' + c.valides + '</td>'
+      + '<td style="padding:6px 8px;text-align:center">' + c.rejetes + '</td>'
+      + '<td style="padding:6px 8px">' + (c.item_retenu
+          ? c.item_retenu + (c.verrouille ? ' <span title="Déjà présenté à des étudiants : ne peut plus être changé">🔒</span>' : '')
+          : '<span style="color:#E65100">aucun</span>') + '</td></tr>';
+  });
+  html += '</tbody></table></div>';
+  document.getElementById('banque-etat').innerHTML = html;
+}
+
+async function genererBanque(seulementManquantes) {
+  const nb = parseInt(document.getElementById('banque-nb').value, 10) || 3;
+  const msg = seulementManquantes
+    ? 'Générer ' + nb + ' nouveaux candidats pour chaque combinaison sans item validé ?'
+    : 'Générer ' + nb + ' candidats pour chacune des 30 combinaisons ?';
+  if (!confirm(msg)) return;
+  _banqueMessage('Génération en cours…');
+  try {
+    const r = await apiAuth('POST', '/exp/banque/generer?nb_par_combinaison=' + nb
+      + '&seulement_manquantes=' + (seulementManquantes ? 'true' : 'false'));
+    _banqueMessage('✓ ' + r.items_crees + ' items candidats créés. Téléchargez maintenant la fiche de relecture.', '#2E7D32');
+    chargerEtatBanque();
+  } catch(err) {
+    _banqueMessage('Erreur : ' + err.message, '#C62828');
+  }
+}
+
+async function envoyerFicheBanque(input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  _banqueMessage('Envoi de « ' + f.name + ' »…');
+  try {
+    const r = await fetch(API + '/exp/banque/validation_csv', {
+      method: 'POST',
+      headers: { 'Authorization': auth.token ? 'Bearer ' + auth.token : '',
+                 'Content-Type': 'text/csv' },
+      body: f,
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    let txt = '✓ ' + d.mis_a_jour + ' item(s) mis à jour, ' + d.inchanges + ' inchangé(s).';
+    const pb = [];
+    if (d.statuts_invalides.length) pb.push('statut non reconnu (écrire valide ou rejete) : ' + d.statuts_invalides.join(', '));
+    if (d.codes_inconnus.length)   pb.push('code_item inconnu : ' + d.codes_inconnus.join(', '));
+    if (d.verrouilles.length)      pb.push('déjà présentés à des étudiants, non modifiés : ' + d.verrouilles.join(', '));
+    if (pb.length) txt += '<br><span style="color:#E65100">⚠ ' + pb.join('<br>⚠ ') + '</span>';
+    _banqueMessage(txt, '#2E7D32');
+    afficherEtatBanque(d.etat);
+  } catch(err) {
+    _banqueMessage('Erreur : ' + err.message, '#C62828');
+  } finally {
+    input.value = '';
   }
 }
 
@@ -2498,9 +2655,18 @@ async function voirDetailParticipant(code) {
   try {
     const d = await apiAuth('GET', '/exp/participant/' + encodeURIComponent(code));
     const p = d.participant;
-    const s = d.stats;
     const e = d.evaluation;
-    const r = d.reponses;
+    const r = d.reponses || [];
+    const _moy = function(k) {
+      const v = r.map(function(x) { return x[k]; }).filter(function(x) { return x != null; });
+      return v.length ? Math.round(v.reduce(function(a, b) { return a + b; }, 0) / v.length) : 0;
+    };
+    const s = {
+      taux_reussite: r.length ? Math.round(100 * r.filter(function(x) { return x.est_correct === 1; }).length / r.length) : 0,
+      temps_moyen: _moy('temps_reel_s'),
+      ert_a_moyen: _moy('ert_a_s'),
+      ert_b_moyen: _moy('ert_b_s'),
+    };
 
     // ── En-tête participant ──────────────────────────────
     let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'
@@ -2520,8 +2686,8 @@ async function voirDetailParticipant(code) {
       + '<div style="font-size:1.3rem;font-weight:700;color:#E65100">' + s.temps_moyen + 's</div>'
       + '<div style="font-size:.75rem;color:#555">Tps moyen</div></div>'
       + '<div style="background:#F3E5F5;border-radius:8px;padding:10px;text-align:center">'
-      + '<div style="font-size:1.3rem;font-weight:700;color:#6A1B9A">' + s.ert_moyen + 's</div>'
-      + '<div style="font-size:.75rem;color:#555">ERT moyen</div></div>'
+      + '<div style="font-size:1.3rem;font-weight:700;color:#6A1B9A">' + s.ert_a_moyen + 's / ' + s.ert_b_moyen + 's</div>'
+      + '<div style="font-size:.75rem;color:#555">ERT-A / ERT-B moyens</div></div>'
       + '</div>'
 
       // Infos profil
@@ -2539,7 +2705,8 @@ async function voirDetailParticipant(code) {
         + '<thead><tr style="background:#F3F4F6">'
         + '<th style="padding:7px;text-align:left">Objectif</th>'
         + '<th style="padding:7px;text-align:left">Mode</th>'
-        + '<th style="padding:7px;text-align:center">ERT prédit</th>'
+        + '<th style="padding:7px;text-align:center">ERT-A</th>'
+        + '<th style="padding:7px;text-align:center">ERT-B</th>'
         + '<th style="padding:7px;text-align:center">Tps réel</th>'
         + '<th style="padding:7px;text-align:center">Résultat</th>'
         + '<th style="padding:7px;text-align:left">Choix</th>'
@@ -2548,13 +2715,15 @@ async function voirDetailParticipant(code) {
       r.forEach(function(rep, i) {
         const bg  = i % 2 === 0 ? '#fff' : '#F9FAFB';
         const ok  = rep.est_correct === 1;
-        const diff= Math.abs((rep.temps_reel_s||0) - (rep.ert_predit_s||0));
+        const ertA = rep.ert_a_s != null ? rep.ert_a_s + 's' : '—';
+        const ertB = rep.ert_b_s != null ? rep.ert_b_s + 's'
+                   : (rep.ert_predit_s != null ? rep.ert_predit_s + 's' : '—');
         html += '<tr style="background:' + bg + ';border-bottom:1px solid #F3F4F6">'
           + '<td style="padding:7px;font-weight:600">' + (rep.objectif_code||'—') + '</td>'
           + '<td style="padding:7px">' + (rep.mode_bloom||'—') + '</td>'
-          + '<td style="padding:7px;text-align:center">' + (rep.ert_predit_s||0) + 's</td>'
-          + '<td style="padding:7px;text-align:center;color:' + (diff > 15 ? '#E65100' : '#2E7D32') + '">'
-          + (Math.round(rep.temps_reel_s)||0) + 's</td>'
+          + '<td style="padding:7px;text-align:center">' + ertA + '</td>'
+          + '<td style="padding:7px;text-align:center">' + ertB + '</td>'
+          + '<td style="padding:7px;text-align:center">' + (Math.round(rep.temps_reel_s)||0) + 's</td>'
           + '<td style="padding:7px;text-align:center">'
           + (ok ? '<span style="color:#2E7D32;font-weight:700">✓</span>'
                : '<span style="color:#EF4444;font-weight:700">✗</span>') + '</td>'
@@ -2614,6 +2783,7 @@ showSection = function(id, el) {
   _origShowSection(id, el);
   if (id === 'admin-experimentation') {
     chargerStatsExp();
+    chargerEtatBanque();
     chargerParticipants();
   }
 };
@@ -2783,12 +2953,35 @@ showSection = function(id, el) {
 </section>
 
 <!-- ══════════════════════════════════════════════
+     SECTION MOT DE PASSE (tout utilisateur connecté)
+══════════════════════════════════════════════ -->
+<section id="s-mot-de-passe" class="section">
+  <div class="page-title">🔑 Changer mon mot de passe</div>
+  <div class="card" style="max-width:420px;margin:0 auto">
+    <div class="form-row">
+      <label>Mot de passe actuel</label>
+      <input id="mdp-ancien" type="password" autocomplete="current-password" />
+    </div>
+    <div class="form-row">
+      <label>Nouveau mot de passe (10 caractères minimum)</label>
+      <input id="mdp-nouveau" type="password" autocomplete="new-password" />
+    </div>
+    <div class="form-row">
+      <label>Confirmer le nouveau mot de passe</label>
+      <input id="mdp-confirm" type="password" autocomplete="new-password" />
+    </div>
+    <div id="mdp-message" style="font-size:13px;margin-bottom:10px;display:none"></div>
+    <button class="btn btn-primary" onclick="changerMotDePasse()" style="width:100%">Enregistrer</button>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
      SECTION EXPÉRIMENTATION (admin)
 ══════════════════════════════════════════════ -->
 <section id="admin-experimentation" class="section">
   <div class="page-title">🧪 Expérimentation — Collecte de données</div>
 
-  <!-- Statistiques globales -->
+  <!-- Statistiques globales (collecte v2) -->
   <div id="exp-tb" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:24px">
     <div class="card" style="text-align:center">
       <div style="font-size:32px;font-weight:800;color:#1565C0" id="exp-nb-part">—</div>
@@ -2796,55 +2989,85 @@ showSection = function(id, el) {
     </div>
     <div class="card" style="text-align:center">
       <div style="font-size:32px;font-weight:800;color:#2E7D32" id="exp-nb-sess">—</div>
-      <div style="color:#6b7280;font-size:13px">Sessions terminées</div>
+      <div style="color:#6b7280;font-size:13px">Sessions terminées (v2)</div>
+    </div>
+    <div class="card" style="text-align:center">
+      <div style="font-size:32px;font-weight:800;color:#6A1B9A" id="exp-nb-cours">—</div>
+      <div style="color:#6b7280;font-size:13px">Sessions en cours (v2)</div>
     </div>
     <div class="card" style="text-align:center">
       <div style="font-size:32px;font-weight:800;color:#E65100" id="exp-nb-rep">—</div>
-      <div style="color:#6b7280;font-size:13px">Réponses collectées</div>
-    </div>
-    <div class="card" style="text-align:center">
-      <div style="font-size:32px;font-weight:800;color:#6A1B9A" id="exp-nb-eval">—</div>
-      <div style="color:#6b7280;font-size:13px">Évaluations qualitatives</div>
+      <div style="color:#6b7280;font-size:13px">Réponses collectées (v2)</div>
     </div>
   </div>
 
-  <!-- Exports CSV -->
+  <!-- Banque d'items -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-title"><div class="dot"></div>📚 Banque d'items (à valider par les enseignants)</div>
+    <div style="font-size:.88rem;color:#4b5563;margin:8px 0 14px;line-height:1.55">
+      Chaque étudiant reçoit 24 questions communes tirées de cette banque et 6 questions générées.
+      Il faut <b>au moins un item validé pour chacune des 30 combinaisons</b> objectif × mode.
+      Si plusieurs items sont validés pour une combinaison, le plus ancien est retenu.
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px">
+      <div style="border:1.5px solid #E3F2FD;border-radius:10px;padding:14px">
+        <div style="font-weight:700;color:#1565C0;margin-bottom:6px">1. Générer les candidats</div>
+        <div style="font-size:.82rem;color:#666;margin-bottom:10px">
+          <label>Candidats par combinaison :
+            <input id="banque-nb" type="number" min="1" max="10" value="3"
+                   style="width:55px;padding:3px 6px;border:1px solid #e5e7eb;border-radius:6px"></label>
+        </div>
+        <button class="btn btn-primary" style="width:100%;padding:8px;margin-bottom:6px"
+                onclick="genererBanque(false)">⚙ Générer (30 combinaisons)</button>
+        <button class="btn" style="width:100%;padding:8px;border:1.5px solid #1565C0;color:#1565C0;background:#fff"
+                onclick="genererBanque(true)">⚙ Seulement les combinaisons sans item validé</button>
+      </div>
+      <div style="border:1.5px solid #E8F5E9;border-radius:10px;padding:14px">
+        <div style="font-weight:700;color:#2E7D32;margin-bottom:6px">2. Télécharger la fiche</div>
+        <div style="font-size:.82rem;color:#666;margin-bottom:10px">
+          Fichier CSV à ouvrir dans Excel. Les enseignants écrivent <b>valide</b> ou <b>rejete</b>
+          dans la colonne <i>statut</i> et, si besoin, un commentaire. Ne pas modifier <i>code_item</i>.
+        </div>
+        <button class="btn btn-primary" style="width:100%;padding:8px;background:#2E7D32"
+                onclick="expExport('banque')">⬇ banque_items_relecture.csv</button>
+      </div>
+      <div style="border:1.5px solid #FFF3E0;border-radius:10px;padding:14px">
+        <div style="font-weight:700;color:#E65100;margin-bottom:6px">3. Envoyer la fiche remplie</div>
+        <div style="font-size:.82rem;color:#666;margin-bottom:10px">
+          Enregistrer dans Excel au format CSV, puis l'envoyer ici. On peut l'envoyer plusieurs fois.
+        </div>
+        <label class="btn btn-primary" style="display:block;text-align:center;padding:8px;background:#E65100;cursor:pointer">
+          ⬆ Choisir le fichier…
+          <input type="file" accept=".csv,text/csv" style="display:none" onchange="envoyerFicheBanque(this)">
+        </label>
+      </div>
+    </div>
+    <div id="banque-message" style="display:none;margin-top:12px;font-size:.88rem;line-height:1.5"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:18px 0 8px;flex-wrap:wrap;gap:8px">
+      <div id="banque-compteur" style="font-size:.95rem"></div>
+      <button class="btn" style="padding:6px 14px;border:1px solid #e5e7eb;background:#fff"
+              onclick="chargerEtatBanque()">🔄 Actualiser</button>
+    </div>
+    <div id="banque-etat"></div>
+  </div>
+
+  <!-- Exports CSV (aucun nom, prénom ni e-mail) -->
   <div class="card" style="margin-bottom:20px">
     <div class="card-title"><div class="dot"></div>📥 Télécharger les données</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin-top:12px">
-      <div style="border:1.5px solid #E3F2FD;border-radius:10px;padding:16px">
-        <div style="font-weight:700;color:#1565C0;margin-bottom:6px">⏱ Validation ERT</div>
-        <div style="font-size:.85rem;color:#666;margin-bottom:12px">
-          Temps réel vs temps prédit pour chaque réponse.<br>
-          <em>Permet de calculer r(ERT, t_réel)</em>
-        </div>
-        <button class="btn btn-primary" style="width:100%;padding:9px"
-                onclick="expExport('ert')">
-          ⬇ exp_validation_ert.csv
-        </button>
-      </div>
-      <div style="border:1.5px solid #E8F5E9;border-radius:10px;padding:16px">
-        <div style="font-weight:700;color:#2E7D32;margin-bottom:6px">🎯 Analyse des distracteurs</div>
-        <div style="font-size:.85rem;color:#666;margin-bottom:12px">
-          Distracteur choisi pour chaque question.<br>
-          <em>Permet de calculer l'indice de discrimination</em>
-        </div>
-        <button class="btn btn-primary" style="width:100%;padding:9px;background:#2E7D32"
-                onclick="expExport('distracteurs')">
-          ⬇ exp_validation_distracteurs.csv
-        </button>
-      </div>
-      <div style="border:1.5px solid #FFF3E0;border-radius:10px;padding:16px">
-        <div style="font-weight:700;color:#E65100;margin-bottom:6px">📝 Évaluations qualitatives</div>
-        <div style="font-size:.85rem;color:#666;margin-bottom:12px">
-          8 critères Likert par participant.<br>
-          <em>Remplace les tableaux 4.6 et 4.7</em>
-        </div>
-        <button class="btn btn-primary" style="width:100%;padding:9px;background:#E65100"
-                onclick="expExport('qualitatif')">
-          ⬇ exp_evaluation_qualitative.csv
-        </button>
-      </div>
+    <div style="font-size:.85rem;color:#666;margin:6px 0 12px">
+      Les fichiers ne contiennent que le code anonyme des étudiants.
+    </div>
+    <div style="font-weight:700;color:#374151;margin-bottom:8px">Collecte v2</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:16px">
+      <button class="btn btn-primary" style="padding:9px" onclick="expExport('reponses')">⬇ Réponses (ERT-A, ERT-B, temps)</button>
+      <button class="btn btn-primary" style="padding:9px;background:#2E7D32" onclick="expExport('items')">⬇ Items présentés</button>
+      <button class="btn btn-primary" style="padding:9px;background:#E65100" onclick="expExport('qualitatif')">⬇ Questionnaire</button>
+    </div>
+    <div style="font-weight:700;color:#374151;margin-bottom:8px">Collecte 2026 (v1)</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
+      <button class="btn" style="padding:9px;border:1.5px solid #1565C0;color:#1565C0;background:#fff" onclick="expExport('v1_ert')">⬇ Validation ERT</button>
+      <button class="btn" style="padding:9px;border:1.5px solid #2E7D32;color:#2E7D32;background:#fff" onclick="expExport('v1_distracteurs')">⬇ Distracteurs</button>
+      <button class="btn" style="padding:9px;border:1.5px solid #E65100;color:#E65100;background:#fff" onclick="expExport('v1_qualitatif')">⬇ Questionnaire</button>
     </div>
   </div>
 

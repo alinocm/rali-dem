@@ -21,6 +21,9 @@ from typing import Optional
 
 DB_PATH = os.environ.get('RALI_DB_PATH', os.path.join(os.path.dirname(__file__), '..', 'database', 'rali_dem.db'))
 SECRET_KEY = os.environ.get('RALI_SECRET_KEY', 'rali-dem-secret-2026-changez-moi')
+if SECRET_KEY == 'rali-dem-secret-2026-changez-moi' and os.environ.get('RAILWAY_ENVIRONMENT'):
+    print("[AUTH] ATTENTION : RALI_SECRET_KEY n'est pas definie sur Railway. "
+          "La cle par defaut est publique : definissez cette variable.")
 TOKEN_DUREE_HEURES = 24
 
 NIVEAUX_VALIDES = ['L1', 'L2', 'L3', 'Master 1', 'Master 2', 'Doctorat']
