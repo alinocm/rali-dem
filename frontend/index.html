@@ -386,6 +386,7 @@
         <div style="font-size:12px;color:rgba(255,255,255,0.6)">Connecté en tant que</div>
         <div id="nav-user-name" style="font-weight:700;color:#fff;font-size:13px"></div>
         <div id="nav-user-role" style="font-size:11px;color:#a78bfa"></div>
+        <button onclick="showSection('mot-de-passe', null)" style="margin-top:6px;padding:4px 10px;background:rgba(255,255,255,0.1);border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:11px;width:100%">🔑 Changer mon mot de passe</button>
         <button onclick="deconnecter()" style="margin-top:6px;padding:4px 10px;background:rgba(255,255,255,0.1);border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:11px;width:100%">🚪 Déconnexion</button>
       </div>
 
@@ -957,7 +958,7 @@ function showSection(id, navEl) {
     historique:"Mon historique", rapport:"Rapport d'erreurs",
     export:"Exporter une fiche",
     "admin-stats":"Statistiques", "admin-apprenants":"Apprenants",
-    "admin-experimentation":"Expérimentation"
+    "admin-experimentation":"Expérimentation", "mot-de-passe":"Mot de passe"
   };
   if ($("topbar-title")) $("topbar-title").textContent = titres[id] || id;
 
@@ -2368,6 +2369,28 @@ function _creerSessionLibre() {
 
 
 // ══════════════════════════════════════════════════════════════
+// CHANGEMENT DE MOT DE PASSE
+// ══════════════════════════════════════════════════════════════
+async function changerMotDePasse() {
+  const anc = document.getElementById('mdp-ancien').value;
+  const nv  = document.getElementById('mdp-nouveau').value;
+  const cf  = document.getElementById('mdp-confirm').value;
+  const msg = document.getElementById('mdp-message');
+  const dire = function(t, ok) { msg.textContent = t; msg.style.color = ok ? '#10b981' : '#ef4444'; msg.style.display = 'block'; };
+  if (!auth.token) return dire('Connectez-vous d\'abord.');
+  if (nv.length < 10) return dire('Le nouveau mot de passe doit faire au moins 10 caractères.');
+  if (nv !== cf) return dire('Les deux nouveaux mots de passe ne sont pas identiques.');
+  if (nv === anc) return dire('Le nouveau mot de passe doit être différent de l\'actuel.');
+  try {
+    await apiAuth('PUT', '/auth/mot_de_passe', { ancien_mdp: anc, nouveau_mdp: nv });
+    ['mdp-ancien', 'mdp-nouveau', 'mdp-confirm'].forEach(function(id) { document.getElementById(id).value = ''; });
+    dire('✓ Mot de passe modifié. Utilisez-le à votre prochaine connexion.', true);
+  } catch (e) {
+    dire(e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
 // EXPÉRIMENTATION — Fonctions admin
 // ══════════════════════════════════════════════════════════════
 
@@ -2926,6 +2949,29 @@ showSection = function(id, el) {
       <button class="btn btn-primary" onclick="chargerApprenants()">🔄 Actualiser</button>
     </div>
     <div id="admin-apprenants-table"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     SECTION MOT DE PASSE (tout utilisateur connecté)
+══════════════════════════════════════════════ -->
+<section id="s-mot-de-passe" class="section">
+  <div class="page-title">🔑 Changer mon mot de passe</div>
+  <div class="card" style="max-width:420px;margin:0 auto">
+    <div class="form-row">
+      <label>Mot de passe actuel</label>
+      <input id="mdp-ancien" type="password" autocomplete="current-password" />
+    </div>
+    <div class="form-row">
+      <label>Nouveau mot de passe (10 caractères minimum)</label>
+      <input id="mdp-nouveau" type="password" autocomplete="new-password" />
+    </div>
+    <div class="form-row">
+      <label>Confirmer le nouveau mot de passe</label>
+      <input id="mdp-confirm" type="password" autocomplete="new-password" />
+    </div>
+    <div id="mdp-message" style="font-size:13px;margin-bottom:10px;display:none"></div>
+    <button class="btn btn-primary" onclick="changerMotDePasse()" style="width:100%">Enregistrer</button>
   </div>
 </section>
 

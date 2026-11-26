@@ -36,8 +36,11 @@ tables au démarrage du serveur, sans toucher aux données de 2026.
 2. **Railway** : attacher un volume persistant monté sur `/data` au service
    `web` (la base y est créée quand `RAILWAY_ENVIRONMENT` est défini) et prévoir
    une sauvegarde régulière.
-3. **Banque d'items** : la préparer et la faire valider (ci-dessous).
-4. **Pilote** : faire passer 10 à 15 étudiants, puis vérifier l'export.
+3. **Sécurité** : définir la variable `RALI_SECRET_KEY` sur Railway (longue
+   valeur aléatoire), puis changer le mot de passe administrateur avec le
+   bouton « Changer mon mot de passe » sous le nom de l'utilisateur connecté.
+4. **Banque d'items** : la préparer et la faire valider (ci-dessous).
+5. **Pilote** : faire passer 10 à 15 étudiants, puis vérifier l'export.
 
 ## Préparer la banque d'items
 
