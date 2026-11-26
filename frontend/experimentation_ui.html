@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RALI-DEM — Session Expérimentale</title>
+<title>RALI-DEM — Session expérimentale</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: Arial, sans-serif; background: #F5F7FA; color: #212121; }
@@ -15,636 +15,398 @@ h2 { color: #1565C0; font-size: 1.1rem; margin-bottom: 16px; }
 p  { color: #555; line-height: 1.6; margin-bottom: 12px; }
 .screen { display: none; }
 .screen.active { display: block; }
-.consent-box { border: 1px solid #ccc; border-radius: 8px;
-               padding: 16px; margin: 16px 0; font-size: .9rem;
-               line-height: 1.7; background: #fafafa; }
-.consent-row { display: flex; gap: 12px; align-items: flex-start;
-               margin-top: 12px; }
-.consent-row input { width: 20px; height: 20px; flex-shrink: 0;
-                     margin-top: 2px; cursor: pointer; }
+.consent-box { border: 1px solid #ccc; border-radius: 8px; padding: 16px;
+               margin: 16px 0; font-size: .9rem; line-height: 1.7;
+               background: #fafafa; }
+.consent-box ul { margin: 8px 0 8px 20px; }
+.consent-row { display: flex; gap: 12px; align-items: flex-start; margin-top: 12px; }
+.consent-row input { width: 20px; height: 20px; flex-shrink: 0; margin-top: 2px; cursor: pointer; }
 .consent-row label { cursor: pointer; font-size: .9rem; }
-.btn { display: block; width: 100%; padding: 13px;
-       border: none; border-radius: 8px; font-size: 1rem;
-       font-weight: 700; cursor: pointer; margin-top: 12px;
+.btn { display: block; width: 100%; padding: 13px; border: none; border-radius: 8px;
+       font-size: 1rem; font-weight: 700; cursor: pointer; margin-top: 12px;
        background: #1565C0; color: #fff; }
 .btn:hover { background: #0D47A1; }
-.btn-off { background: #90A4AE !important; cursor: not-allowed !important; }
+.btn:disabled { background: #90A4AE; cursor: not-allowed; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .fg { margin-bottom: 14px; }
-.fg label { display: block; font-weight: 600; font-size: .9rem;
-            margin-bottom: 5px; }
-.fg input, .fg select {
-  width: 100%; padding: 10px; border: 1.5px solid #ccc;
-  border-radius: 7px; font-size: .95rem; }
-.fg input:focus, .fg select:focus { border-color: #1565C0; outline: none; }
-.err { color: red; font-size: .9rem; margin-bottom: 8px; display: none; }
-.progress-bar { background: #E3F2FD; border-radius: 6px;
-                height: 8px; margin: 12px 0; }
-.progress-fill { background: #1565C0; height: 8px;
-                 border-radius: 6px; transition: width .4s; }
-.prog-lbl { display: flex; justify-content: space-between;
-            font-size: .85rem; color: #777; }
-.timer-box { background: #FFF8E1; border-radius: 8px;
-             padding: 10px 16px; margin: 12px 0;
-             display: flex; align-items: center; gap: 12px; }
-.timer-num { font-size: 1.2rem; font-weight: 700; color: #E65100; }
+.fg label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: 5px; }
+.fg input, .fg select { width: 100%; padding: 10px; border: 1.5px solid #ccc;
+                        border-radius: 7px; font-size: .95rem; }
+.err { color: #C62828; font-size: .9rem; margin: 8px 0; display: none; }
+.info { color: #E65100; font-size: .9rem; margin: 8px 0; display: none; }
+.progress-bar { background: #E3F2FD; border-radius: 6px; height: 8px; margin: 12px 0 18px; }
+.progress-fill { background: #1565C0; height: 8px; border-radius: 6px; transition: width .4s; }
+.prog-lbl { font-size: .9rem; color: #555; }
 .enonce { background: #F8F9FA; border-left: 4px solid #1565C0;
-          border-radius: 0 8px 8px 0; padding: 16px;
-          font-style: italic; line-height: 1.7; margin: 14px 0; }
+          border-radius: 0 8px 8px 0; padding: 16px; line-height: 1.7;
+          margin: 14px 0; white-space: pre-line; }
 .choix { list-style: none; display: grid; gap: 10px; margin-bottom: 14px; }
-.choix li label { display: flex; gap: 12px; padding: 13px;
-                  border: 2px solid #ddd; border-radius: 9px;
-                  cursor: pointer; font-weight: normal;
-                  align-items: flex-start; }
+.choix li label { display: flex; gap: 12px; padding: 13px; border: 2px solid #ddd;
+                  border-radius: 9px; cursor: pointer; align-items: flex-start; }
 .choix li label:hover { border-color: #1565C0; background: #E3F2FD; }
 .choix li.sel label { border-color: #1565C0; background: #E3F2FD; }
 .choix li input[type=radio] { margin-top: 3px; flex-shrink: 0; }
-.ok  { background: #E8F5E9; border: 1.5px solid #4CAF50;
-       border-radius: 8px; padding: 12px; margin-top: 10px; }
-.ko  { background: #FFEBEE; border: 1.5px solid #EF5350;
-       border-radius: 8px; padding: 12px; margin-top: 10px; }
-.badge { display: inline-block; padding: 3px 10px; border-radius: 20px;
-         font-size: .8rem; font-weight: 600; }
-.b-bl { background: #E3F2FD; color: #1565C0; }
-.b-or { background: #FFF3E0; color: #E65100; }
+.ok  { background: #E8F5E9; border: 1.5px solid #4CAF50; border-radius: 8px; padding: 12px; margin-top: 10px; }
+.ko  { background: #FFEBEE; border: 1.5px solid #EF5350; border-radius: 8px; padding: 12px; margin-top: 10px; }
 .likert-group { margin-bottom: 18px; }
-.likert-group label { font-size: .9rem; font-weight: 600; display: block;
-                      margin-bottom: 8px; }
-.likert-row { display: flex; gap: 8px; }
+.likert-group label.q { font-size: .9rem; font-weight: 600; display: block; margin-bottom: 8px; }
+.likert-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .lk { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .lk input { display: none; }
-.lk span  { width: 38px; height: 38px; border-radius: 50%;
-             border: 2px solid #bbb; display: flex; align-items: center;
-             justify-content: center; font-weight: 700; cursor: pointer;
-             background: #fff; font-size: .9rem; }
-.lk span:hover { border-color: #1565C0; background: #E3F2FD; }
-.lk input:checked + span { background: #1565C0; color: #fff;
-                             border-color: #1565C0; }
-.lk small { font-size: .7rem; color: #999; text-align: center;
-             max-width: 48px; }
-.score-c { width: 110px; height: 110px; border-radius: 50%;
-           border: 7px solid #1565C0; display: flex;
-           flex-direction: column; align-items: center;
+.lk span { width: 38px; height: 38px; border-radius: 50%; border: 2px solid #bbb;
+           display: flex; align-items: center; justify-content: center;
+           font-weight: 700; cursor: pointer; background: #fff; font-size: .9rem; }
+.lk input:checked + span { background: #1565C0; color: #fff; border-color: #1565C0; }
+.lk small { font-size: .7rem; color: #999; text-align: center; max-width: 52px; }
+.score-c { width: 110px; height: 110px; border-radius: 50%; border: 7px solid #1565C0;
+           display: flex; flex-direction: column; align-items: center;
            justify-content: center; margin: 16px auto; }
 .score-n { font-size: 1.8rem; font-weight: 700; color: #1565C0; }
 .score-l { font-size: .75rem; color: #777; }
-.stats-g { display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
-            margin: 14px 0; }
-.stat-c { border: 1.5px solid #ddd; border-radius: 8px; padding: 14px; }
-.stat-v { font-size: 1.3rem; font-weight: 700; }
-.stat-l { font-size: .8rem; color: #777; }
-textarea { width: 100%; padding: 10px; border: 1.5px solid #ccc;
-           border-radius: 7px; font-size: .9rem; resize: vertical; }
+textarea { width: 100%; padding: 10px; border: 1.5px solid #ccc; border-radius: 7px;
+           font-size: .9rem; resize: vertical; }
 </style>
 </head>
 <body>
 <div class="container">
 
-<!-- ÉCRAN ACCUEIL -->
+<!-- ACCUEIL ET CONSENTEMENT -->
 <div id="s-accueil" class="screen active">
   <div class="card">
-    <h1>🎓 RALI-DEM — Session Expérimentale</h1>
-    <p>Université de Yaoundé I · ENSPY 2026</p>
+    <h1>RALI-DEM — Session expérimentale</h1>
+    <p>Université de Yaoundé I · ENSPY</p>
     <p>Vous allez répondre à <strong>30 questions</strong> de logique
-       mathématique générées automatiquement. Votre participation
-       contribue à la validation scientifique du système.</p>
+       mathématique, puis à un court questionnaire (environ 2 minutes).</p>
     <div class="consent-box">
-      <strong>Consentement éclairé</strong><br>
-      En participant, vous acceptez que vos réponses soient collectées
-      de façon <strong>anonymisée</strong> pour une recherche doctorale
-      (ENSPY, Yaoundé I, 2026). Votre code anonyme sera affiché à la fin.
-      Vous pouvez arrêter à tout moment.
+      <strong>Information et consentement</strong>
+      <ul>
+        <li>Cette activité fait partie d'une recherche doctorale (ENSPY,
+            Université de Yaoundé I). Elle est <strong>facultative</strong> et
+            <strong>n'a aucun effet sur votre note</strong> du cours.</li>
+        <li>Votre nom, votre prénom et votre e-mail sont conservés par le seul
+            chercheur responsable et ne sont jamais transmis. Les fichiers
+            d'analyse ne contiennent qu'un code anonyme.</li>
+        <li>Les données sont conservées <!-- À COMPLÉTER AVANT LA COLLECTE -->
+            [durée de conservation à préciser], puis l'identité est effacée.</li>
+        <li>Vous pouvez arrêter à tout moment. Pour retirer vos données,
+            écrivez à <!-- À COMPLÉTER AVANT LA COLLECTE -->
+            [adresse de contact à préciser] en indiquant votre code anonyme.</li>
+      </ul>
       <div class="consent-row">
         <input type="checkbox" id="cb">
-        <label for="cb">J'ai lu et j'accepte les conditions.</label>
+        <label for="cb">J'ai lu ces informations et j'accepte de participer.</label>
       </div>
     </div>
-    <button class="btn btn-off" id="btn-start">Commencer →</button>
+    <button class="btn" id="btn-start" disabled>Commencer →</button>
   </div>
 </div>
 
-<!-- ÉCRAN INSCRIPTION -->
+<!-- INSCRIPTION -->
 <div id="s-inscription" class="screen">
   <div class="card">
-    <h2>📋 Vos informations</h2>
+    <h2>Vos informations</h2>
+    <p style="font-size:.9rem">Si votre session a été interrompue, saisissez le
+       même e-mail : vous reprendrez à la question où vous vous êtes arrêté.</p>
     <div class="form-row">
-      <div class="fg"><label>Nom *</label>
-        <input id="nom" placeholder="Nom de famille"></div>
-      <div class="fg"><label>Prénom *</label>
-        <input id="prenom" placeholder="Prénom"></div>
+      <div class="fg"><label for="nom">Nom *</label><input id="nom"></div>
+      <div class="fg"><label for="prenom">Prénom *</label><input id="prenom"></div>
     </div>
-    <div class="fg"><label>Email *</label>
+    <div class="fg"><label for="email">E-mail *</label>
       <input id="email" type="email" placeholder="votre@email.com"></div>
     <div class="form-row">
-      <div class="fg"><label>Niveau *</label>
+      <div class="fg"><label for="niveau">Niveau *</label>
         <select id="niveau">
           <option value="">-- Choisir --</option>
           <option>L1</option><option>L2</option><option>L3</option>
-          <option>Master1</option><option>Master2</option>
-          <option>Doctorat</option>
+          <option>Master1</option><option>Master2</option><option>Doctorat</option>
         </select></div>
-      <div class="fg"><label>Établissement *</label>
-        <input id="etab" placeholder="Ex: ENSPY, FST..."></div>
+      <div class="fg"><label for="etab">Établissement *</label>
+        <input id="etab" placeholder="Ex : ENSPY"></div>
     </div>
     <div id="err-insc" class="err"></div>
-    <button class="btn" onclick="inscrire()">Valider et démarrer →</button>
+    <button class="btn" id="btn-insc">Valider et démarrer →</button>
   </div>
 </div>
 
-<!-- ÉCRAN QUESTION -->
+<!-- QUESTION -->
 <div id="s-question" class="screen">
   <div class="card">
-    <div class="prog-lbl">
-      <span id="q-num">Question 1/30</span>
-      <span id="q-obj" class="badge b-bl">—</span>
-    </div>
-    <div class="progress-bar">
-      <div class="progress-fill" id="q-prog" style="width:0%"></div>
-    </div>
-    <div class="timer-box">
-      <span style="font-size:1.3rem">⏱</span>
-      <div>
-        <div class="timer-num" id="q-timer">0:00</div>
-        <div style="font-size:.8rem;color:#777">
-          ERT prédit : <span id="q-ert">—</span>
-        </div>
-      </div>
-      <div style="margin-left:auto">
-        <span id="q-bloom" class="badge b-or">—</span>
-      </div>
-    </div>
-    <div class="enonce" id="q-enonce">Chargement...</div>
+    <div class="prog-lbl" id="q-num">Question —</div>
+    <div class="progress-bar"><div class="progress-fill" id="q-prog" style="width:0%"></div></div>
+    <div class="enonce" id="q-enonce">Chargement…</div>
     <ul class="choix" id="q-choix"></ul>
     <div id="q-result" style="display:none"></div>
-    <button class="btn btn-off" id="btn-val" onclick="valider()">
-      Valider ma réponse
-    </button>
-    <button class="btn" id="btn-suiv"
-            style="display:none;background:#2E7D32" onclick="suivant()">
-      Suivant →
-    </button>
+    <div id="q-reseau" class="info"></div>
+    <button class="btn" id="btn-val" disabled>Valider ma réponse</button>
+    <button class="btn" id="btn-suiv" style="display:none;background:#2E7D32">Suivant →</button>
   </div>
 </div>
 
-<!-- ÉCRAN ÉVALUATION -->
+<!-- ÉVALUATION -->
 <div id="s-eval" class="screen">
   <div class="card">
-    <h2>📝 Évaluez les questions</h2>
-    <p>Avant de voir votre résultat, évaluez la qualité des questions
-       (moins de 2 minutes).</p>
-
-    <div style="background:#F0F4FF;border-radius:9px;padding:16px;margin:14px 0">
-      <strong style="color:#1565C0">🔤 Qualité linguistique</strong>
-      <div class="likert-group" style="margin-top:12px">
-        <label>1. Grammaticalité (les questions étaient correctes grammaticalement)</label>
-        <div class="likert-row" id="lk-gram"></div>
-      </div>
-      <div class="likert-group">
-        <label>2. Naturalité (le français semblait naturel)</label>
-        <div class="likert-row" id="lk-nat"></div>
-      </div>
-      <div class="likert-group">
-        <label>3. Clarté (les questions étaient faciles à comprendre)</label>
-        <div class="likert-row" id="lk-cla"></div>
-      </div>
-    </div>
-
-    <div style="background:#F0FFF4;border-radius:9px;padding:16px;margin:14px 0">
-      <strong style="color:#2E7D32">🎯 Plausibilité pédagogique</strong>
-      <div class="likert-group" style="margin-top:12px">
-        <label>4. Les mauvaises réponses proposées étaient plausibles</label>
-        <div class="likert-row" id="lk-dist"></div>
-      </div>
-      <div class="likert-group">
-        <label>5. Les questions correspondaient à des objectifs de logique</label>
-        <div class="likert-row" id="lk-pert"></div>
-      </div>
-      <div class="likert-group">
-        <label>6. Certaines questions demandaient vraiment de réfléchir</label>
-        <div class="likert-row" id="lk-bloom"></div>
-      </div>
-    </div>
-
-    <div style="background:#FFFDE7;border-radius:9px;padding:16px;margin:14px 0">
-      <strong style="color:#F57F17">✅ Acceptabilité générale</strong>
-      <div class="likert-group" style="margin-top:12px">
-        <label>7. Ces questions pourraient figurer dans un vrai examen</label>
-        <div class="likert-row" id="lk-acc"></div>
-      </div>
-      <div class="likert-group">
-        <label>8. Ces questions m'ont aidé à comprendre la logique</label>
-        <div class="likert-row" id="lk-util"></div>
-      </div>
-    </div>
-
+    <h2>Votre avis sur les questions</h2>
+    <p>Pour chaque critère, choisissez une note de 1 (très mauvais) à 5 (très bon).</p>
+    <div id="likerts"></div>
     <div class="fg">
-      <label>Commentaire libre (optionnel)</label>
-      <textarea id="commentaire" rows="3"
-        placeholder="Vos remarques sur les questions..."></textarea>
+      <label for="commentaire">Commentaire libre (facultatif)</label>
+      <textarea id="commentaire" rows="3" maxlength="2000"></textarea>
     </div>
     <div id="err-eval" class="err"></div>
-    <button class="btn" onclick="soumettre()">
-      Soumettre et voir mes résultats →
-    </button>
+    <button class="btn" id="btn-eval">Envoyer et voir mes résultats →</button>
   </div>
 </div>
 
-<!-- ÉCRAN FIN -->
+<!-- FIN -->
 <div id="s-fin" class="screen">
   <div class="card" style="text-align:center">
-    <h2>🎉 Session terminée !</h2>
+    <h2>Session terminée</h2>
     <div class="score-c">
       <div class="score-n" id="fin-score">—</div>
-      <div class="score-l">% réussite</div>
+      <div class="score-l">de réussite</div>
     </div>
-    <p id="fin-msg"></p>
-    <div class="stats-g">
-      <div class="stat-c">
-        <div class="stat-l">Questions</div>
-        <div class="stat-v" id="fin-total">—</div>
-      </div>
-      <div class="stat-c">
-        <div class="stat-l">Correctes</div>
-        <div class="stat-v" style="color:#2E7D32" id="fin-ok">—</div>
-      </div>
-      <div class="stat-c">
-        <div class="stat-l">Temps moyen</div>
-        <div class="stat-v" id="fin-tps">—</div>
-      </div>
-      <div class="stat-c">
-        <div class="stat-l">Code anonyme</div>
-        <div class="stat-v" style="color:#1565C0;font-size:.9rem"
-             id="fin-code">—</div>
-      </div>
-    </div>
-    <p style="margin-top:16px;font-size:.9rem;color:#555">
-      Merci pour votre participation ! Vos données ont été enregistrées
-      de façon anonymisée et contribuent à la recherche doctorale RALI-DEM.
-    </p>
+    <p id="fin-detail"></p>
+    <p>Votre code anonyme : <strong id="fin-code">—</strong><br>
+       Notez-le si vous souhaitez un jour retirer vos données.</p>
+    <p style="font-size:.9rem">Merci pour votre participation.</p>
   </div>
 </div>
 
-</div><!-- /container -->
+</div>
 
 <script>
-// ── Config ───────────────────────────────────────────────────
-var NB_Q = 30;
-var API  = (location.hostname === 'localhost' ||
-            location.hostname === '127.0.0.1' ||
-            location.protocol === 'file:')
-           ? 'http://localhost:8000' : '';
+// ── Configuration ────────────────────────────────────────────
+var API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+          ? 'http://' + location.host : '';
+var CONSENTEMENT_VERSION = '2026-11-26';
+var CLE = 'ralidem_exp_v2';            // stockage local (reprise, envois en attente)
 
-// ── État ─────────────────────────────────────────────────────
-var S = {
-  pid: null, sid: null, code: null,
-  num: 0, q: null, tDebut: null,
-  timerID: null, sec: 0,
-  ok: 0, tpsTotal: 0
-};
+// ── État ──────────────────────────────────────────────────────
+var S = { jeton: null, code: null, q: null, t0: null,
+          tCache: 0, tHidden: null, nbChang: 0, envoi: false };
 
-// ── Protocole 30 questions ────────────────────────────────────
-// Objectifs valides selon GABARITS du générateur (generator.py)
-var OBJ = [
-  'PROP','VVER','TVER','NEG_SIMPLE','CONN_ID',
-  'CONN_TRAD','CONN_INV','IMP','EQUIV','MORGAN',
-  'NEG_COMP','NEG_IMP','QUANT_TRAD','NEG_QUANT','CONTRAP'
-];
-var PROTO = [];
-OBJ.forEach(function(o) {
-  PROTO.push({obj:o, mode:'comprehension', niv:'moyen'});
-  PROTO.push({obj:o, mode:'analyse',       niv:'eleve'});
-});
-// Mélange Fisher-Yates
-for (var i = PROTO.length-1; i > 0; i--) {
-  var j = Math.floor(Math.random()*(i+1));
-  var t = PROTO[i]; PROTO[i] = PROTO[j]; PROTO[j] = t;
-}
-
-// ── Navigation ────────────────────────────────────────────────
+function lire() { try { return JSON.parse(localStorage.getItem(CLE)) || {}; } catch (e) { return {}; } }
+function ecrire(o) { try { localStorage.setItem(CLE, JSON.stringify(o)); } catch (e) {} }
+function el(id) { return document.getElementById(id); }
 function go(id) {
   var all = document.querySelectorAll('.screen');
-  for (var i=0; i<all.length; i++) all[i].classList.remove('active');
-  document.getElementById(id).classList.add('active');
+  for (var i = 0; i < all.length; i++) all[i].classList.remove('active');
+  el(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+function esc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// ── Consentement ──────────────────────────────────────────────
-document.getElementById('cb').addEventListener('change', function() {
-  var btn = document.getElementById('btn-start');
-  if (this.checked) {
-    btn.classList.remove('btn-off');
-    btn.onclick = function() { go('s-inscription'); };
-  } else {
-    btn.classList.add('btn-off');
-    btn.onclick = null;
-  }
+// Requête JSON avec nouvel essai automatique en cas d'erreur réseau
+// ou serveur (5xx). Les erreurs 4xx sont renvoyées sans nouvel essai.
+function api(methode, chemin, corps, essai) {
+  essai = essai || 0;
+  return fetch(API + chemin, {
+    method: methode,
+    headers: { 'Content-Type': 'application/json' },
+    body: corps ? JSON.stringify(corps) : undefined
+  }).then(function (r) {
+    if (r.status >= 500) throw new Error('serveur');
+    return r.json().then(function (d) { d._status = r.status; return d; });
+  }).catch(function (e) {
+    var att = Math.min(15000, 1000 * Math.pow(2, essai));
+    var info = el('q-reseau');
+    if (info) { info.textContent = 'Connexion perdue — nouvel essai dans '
+                + Math.round(att / 1000) + ' s. Ne fermez pas la page.';
+                info.style.display = 'block'; }
+    return new Promise(function (res) { setTimeout(res, att); })
+      .then(function () { return api(methode, chemin, corps, essai + 1); });
+  }).then(function (d) {
+    var info = el('q-reseau'); if (info) info.style.display = 'none';
+    return d;
+  });
+}
+
+// ── Temps passé hors de la page (onglet caché) ────────────────
+document.addEventListener('visibilitychange', function () {
+  if (!S.t0) return;
+  if (document.hidden) { S.tHidden = performance.now(); }
+  else if (S.tHidden !== null) { S.tCache += performance.now() - S.tHidden; S.tHidden = null; }
 });
 
-// ── Inscription ───────────────────────────────────────────────
-function inscrire() {
-  var nom   = document.getElementById('nom').value.trim();
-  var prenom= document.getElementById('prenom').value.trim();
-  var email = document.getElementById('email').value.trim();
-  var niv   = document.getElementById('niveau').value;
-  var etab  = document.getElementById('etab').value.trim();
-  var err   = document.getElementById('err-insc');
+// ── Consentement ──────────────────────────────────────────────
+el('cb').addEventListener('change', function () { el('btn-start').disabled = !this.checked; });
+el('btn-start').addEventListener('click', function () {
+  if (el('cb').checked) go('s-inscription');
+});
 
-  if (!nom||!prenom||!email||!niv||!etab) {
-    err.textContent = 'Veuillez remplir tous les champs.';
-    err.style.display = 'block'; return;
+// ── Inscription puis session (ou reprise) ─────────────────────
+el('btn-insc').addEventListener('click', function () {
+  var btn = this, err = el('err-insc');
+  var d = { nom: el('nom').value.trim(), prenom: el('prenom').value.trim(),
+            email: el('email').value.trim(), niveau_etudes: el('niveau').value,
+            etablissement: el('etab').value.trim(),
+            consentement: el('cb').checked, consentement_version: CONSENTEMENT_VERSION };
+  if (!d.nom || !d.prenom || !d.email || !d.niveau_etudes || !d.etablissement) {
+    err.textContent = 'Veuillez remplir tous les champs.'; err.style.display = 'block'; return;
   }
-  err.style.display = 'none';
-
-  fetch(API+'/api/exp/inscrire', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({
-      nom:nom, prenom:prenom, email:email,
-      niveau_etudes:niv, etablissement:etab, consentement:true
-    })
-  })
-  .then(function(r){ return r.json(); })
-  .then(function(d) {
-    if (d.success) {
-      S.pid  = d.participant_id;
-      S.code = d.code_anonyme;
-      creerSession();
-    } else {
-      // Déjà inscrit — récupérer le profil
-      fetch(API+'/api/exp/participant/'+encodeURIComponent(email))
-      .then(function(r){ return r.json(); })
-      .then(function(p) {
-        S.pid  = p.id;
-        S.code = p.code_anonyme;
-        creerSession();
-      });
-    }
-  })
-  .catch(function(e) {
-    err.textContent = 'Erreur réseau : '+e.message;
-    err.style.display = 'block';
+  err.style.display = 'none'; btn.disabled = true;
+  api('POST', '/api/exp/inscrire', d).then(function (r) {
+    if (!r.success) throw new Error(r.error || 'Inscription impossible');
+    S.code = r.code_anonyme;
+    return api('POST', '/api/exp/session', { participant_id: r.participant_id });
+  }).then(function (s) {
+    if (!s.success) throw new Error(s.error || 'Session impossible');
+    S.jeton = s.jeton;
+    ecrire({ jeton: S.jeton, code: S.code });
+    go('s-question'); chargerQ();
+  }).catch(function (e) {
+    err.textContent = e.message; err.style.display = 'block'; btn.disabled = false;
   });
-}
-
-function creerSession() {
-  fetch(API+'/api/exp/session', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({
-      participant_id:S.pid,
-      protocole:'standard',
-      nb_questions:NB_Q
-    })
-  })
-  .then(function(r){ return r.json(); })
-  .then(function(d) {
-    S.sid = d.session_id;
-    go('s-question');
-    chargerQ();
-  });
-}
+});
 
 // ── Questions ─────────────────────────────────────────────────
 function chargerQ() {
-  if (S.num >= NB_Q) { initLikert(); go('s-eval'); return; }
-  stopTimer();
-
-  var spec = PROTO[S.num];
-  fetch(API+'/api/generer', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({
-      objectif_code:     spec.obj,
-      mode_bloom:        spec.mode,
-      niveau_complexite: spec.niv,
-      sauvegarder:       false
-    })
-  })
-  .then(function(r){ return r.json(); })
-  .then(function(q) {
-    S.q = Object.assign({}, q, spec);
-
-    document.getElementById('q-num').textContent =
-      'Question '+(S.num+1)+'/'+NB_Q;
-    document.getElementById('q-obj').textContent  = spec.obj;
-    document.getElementById('q-bloom').textContent =
-      spec.mode==='comprehension' ? '🔵 Compréhension' : '🔴 Analyse';
-    document.getElementById('q-ert').textContent = (q.ert_secondes||'?')+' s';
-    document.getElementById('q-prog').style.width =
-      Math.round(S.num/NB_Q*100)+'%';
-    document.getElementById('q-enonce').textContent = q.enonce||'...';
-
-    // Choix
-    var rep  = q.reponse_correcte || '';
-    var dist = q.distracteurs || [];
-    // Mélanger : bonne réponse + 3 distracteurs dans ordre aléatoire
-    var all4 = [rep, dist[0]||'', dist[1]||'', dist[2]||''];
-    // Fisher-Yates shuffle
-    for (var fi=all4.length-1; fi>0; fi--) {
-      var fj=Math.floor(Math.random()*(fi+1));
-      var ft=all4[fi]; all4[fi]=all4[fj]; all4[fj]=ft;
-    }
-    var labels = ['A','B','C','D'];
-    var ch = all4.map(function(v,i){ return {l:labels[i], v:v}; });
-    var ul = document.getElementById('q-choix');
-    ul.innerHTML = '';
-    ch.forEach(function(c) {
+  el('btn-val').style.display = 'block'; el('btn-val').disabled = true;
+  el('btn-suiv').style.display = 'none';
+  el('q-result').style.display = 'none';
+  el('q-enonce').textContent = 'Chargement…'; el('q-choix').innerHTML = '';
+  api('GET', '/api/exp/question/' + encodeURIComponent(S.jeton)).then(function (q) {
+    if (q._status === 404) { ecrire({}); location.reload(); return; }
+    if (q.terminee) { finir(); return; }
+    if (q.fin_questions) { initLikert(); go('s-eval'); return; }
+    S.q = q; S.nbChang = 0; S.tCache = 0; S.tHidden = null;
+    el('q-num').textContent = 'Question ' + q.rang + ' / ' + q.nb_questions;
+    el('q-prog').style.width = Math.round(q.nb_repondues / q.nb_questions * 100) + '%';
+    el('q-enonce').textContent = q.enonce;
+    var ul = el('q-choix');
+    q.options.forEach(function (o) {
       var li = document.createElement('li');
-      li.innerHTML = '<label><input type="radio" name="rep" value="'
-        +esc(c.v)+'"> <span><b>'+c.l+')</b> '+esc(c.v)+'</span></label>';
-      li.querySelector('input').addEventListener('change', function() {
-        document.querySelectorAll('#q-choix li')
-          .forEach(function(x){ x.classList.remove('sel'); });
+      li.innerHTML = '<label><input type="radio" name="rep" value="' + o.index + '"> <span><b>'
+        + o.lettre + ')</b> ' + esc(o.texte) + '</span></label>';
+      li.querySelector('input').addEventListener('change', function () {
+        S.nbChang++;
+        document.querySelectorAll('#q-choix li').forEach(function (x) { x.classList.remove('sel'); });
         li.classList.add('sel');
-        var bv = document.getElementById('btn-val');
-        bv.classList.remove('btn-off');
-        bv.onclick = valider;
+        el('btn-val').disabled = false;
       });
       ul.appendChild(li);
     });
-
-    document.getElementById('q-result').style.display = 'none';
-    var bv = document.getElementById('btn-val');
-    bv.style.display = 'block';
-    bv.classList.add('btn-off');
-    bv.onclick = null;
-    document.getElementById('btn-suiv').style.display = 'none';
-
-    // Sauvegarder les specs pour la réponse
-    var spec_obj  = spec.obj;
-    var spec_mode = spec.mode;
-    var spec_niv  = spec.niv;
-    S.tDebut = new Date().toISOString();
-    S.sec = 0;
-    startTimer();
-  })
-  .catch(function(e) {
-    document.getElementById('q-enonce').textContent =
-      'Erreur : '+e.message;
+    // Le chronomètre démarre quand la question est affichée à l'écran
+    requestAnimationFrame(function () { requestAnimationFrame(function () {
+      S.t0 = performance.now(); S.isoDebut = new Date().toISOString();
+    }); });
   });
 }
 
-function esc(s) {
-  return String(s||'')
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;');
+el('btn-val').addEventListener('click', function () {
+  var sel = document.querySelector('#q-choix input:checked');
+  if (!sel || S.envoi || !S.t0) return;
+  S.envoi = true; this.disabled = true;
+  var duree = performance.now() - S.t0;
+  if (S.tHidden !== null) { S.tCache += performance.now() - S.tHidden; S.tHidden = null; }
+  S.t0 = null;
+  document.querySelectorAll('#q-choix input').forEach(function (x) { x.disabled = true; });
+  var corps = { jeton: S.jeton, rang: S.q.rang, index_choisi: parseInt(sel.value, 10),
+                temps_client_ms: Math.round(duree), temps_cache_ms: Math.round(S.tCache),
+                nb_changements: S.nbChang, timestamp_debut: S.isoDebut,
+                timestamp_fin: new Date().toISOString() };
+  var st = lire(); st.attente = corps; ecrire(st);     // gardé en cas de fermeture
+  envoyerReponse(corps);
+});
+
+function envoyerReponse(corps) {
+  api('POST', '/api/exp/reponse', corps).then(function (r) {
+    var st = lire(); delete st.attente; ecrire(st);
+    S.envoi = false;
+    if (r._status >= 400) {               // réponse refusée : on recharge la question
+      var info = el('q-reseau');
+      info.textContent = 'Réponse non enregistrée (' + (r.detail || 'erreur') + '). La question va être rechargée.';
+      info.style.display = 'block';
+      setTimeout(chargerQ, 2500);
+      return;
+    }
+    var zone = el('q-result');
+    if (r.est_correct !== undefined) {
+      zone.innerHTML = r.est_correct
+        ? '<div class="ok"><b>Bonne réponse.</b></div>'
+        : '<div class="ko"><b>Réponse incorrecte.</b> Bonne réponse : '
+          + esc(r.reponse_correcte) + '</div>';
+      zone.style.display = 'block';
+    }
+    el('btn-val').style.display = 'none';
+    var bs = el('btn-suiv'); bs.style.display = 'block'; bs.disabled = false;
+  });
 }
 
-function startTimer() {
-  S.timerID = setInterval(function() {
-    S.sec++;
-    var m = Math.floor(S.sec/60), s = S.sec%60;
-    document.getElementById('q-timer').textContent =
-      m+':'+(s<10?'0':'')+s;
-  }, 1000);
-}
-
-function stopTimer() {
-  if (S.timerID) { clearInterval(S.timerID); S.timerID = null; }
-}
-
-function valider() {
-  stopTimer();
-  var tFin = new Date().toISOString();
-  var sel  = document.querySelector('#q-choix input:checked');
-  if (!sel) return;
-
-  var choisi = sel.value;
-  var q      = S.q;
-  var repOk  = q.reponse_correcte||'';
-  var estOk  = choisi.trim()===repOk.trim();
-
-  if (estOk) S.ok++;
-  S.tpsTotal += S.sec;
-
-  var zone = document.getElementById('q-result');
-  zone.style.display = 'block';
-  if (estOk) {
-    zone.innerHTML = '<div class="ok">✅ <b>Bonne réponse !</b> '
-      +'Temps : '+S.sec+'s · ERT : '+(q.ert_secondes||'?')+'s</div>';
-  } else {
-    zone.innerHTML = '<div class="ko">❌ <b>Incorrect.</b> '
-      +'Bonne réponse : <b>'+esc(repOk)+'</b><br>'
-      +'Temps : '+S.sec+'s · ERT : '+(q.ert_secondes||'?')+'s</div>';
-  }
-
-  // Enregistrer
-  fetch(API+'/api/exp/reponse', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({
-      session_id:S.sid, participant_id:S.pid,
-      numero_question:S.num+1,
-      question_data:{
-          objectif_code:     q.objectif_code||spec_obj,
-          mode_bloom:        q.mode_bloom||spec_mode,
-          niveau_complexite: q.niveau_complexite||spec_niv,
-          enonce:            q.enonce||'',
-          choix_a: repOk,
-          choix_b: (q.distracteurs&&q.distracteurs[0])||'',
-          choix_c: (q.distracteurs&&q.distracteurs[1])||'',
-          choix_d: (q.distracteurs&&q.distracteurs[2])||'',
-          reponse_correcte:  repOk,
-          ert_predit_s:      q.ert_secondes||0,
-          score_predit:      q.score_pedagogique||0,
-          nb_propositions:   q.nb_propositions||2,
-          nb_connecteurs:    q.nb_connecteurs||0,
-          nb_quantificateurs:0,
-          nb_negations:      0,
-          profondeur:        q.profondeur_logique||1
-        },
-      reponse:{
-        distracteur_choisi:choisi,
-        timestamp_debut:S.tDebut,
-        timestamp_fin:tFin
-      }
-    })
-  }).catch(function(e){ console.warn(e); });
-
-  document.getElementById('btn-val').style.display  = 'none';
-  document.getElementById('btn-suiv').style.display = 'block';
-}
-
-function suivant() {
-  S.num++;
+el('btn-suiv').addEventListener('click', function () {
+  if (this.disabled) return;
+  this.disabled = true;                   // un seul clic pris en compte
   chargerQ();
-}
+});
 
-// ── Évaluation Likert ─────────────────────────────────────────
-var LBL = {1:'Très\nmauvais',2:'Mauvais',3:'Moyen',4:'Bon',5:'Très bon'};
+// ── Évaluation ────────────────────────────────────────────────
+var CRITERES = [
+  ['gram',  'grammaticalite',        '1. Les questions étaient grammaticalement correctes'],
+  ['nat',   'naturalite',            '2. Le français des questions semblait naturel'],
+  ['cla',   'clarte',                '3. Les questions étaient faciles à comprendre'],
+  ['dist',  'plausibilite_dist',     '4. Les mauvaises réponses proposées étaient plausibles'],
+  ['pert',  'pertinence_obj',        '5. Les questions correspondaient aux objectifs du cours de logique'],
+  ['bloom', 'alignement_bloom',      '6. Certaines questions demandaient vraiment de réfléchir'],
+  ['acc',   'acceptabilite',         '7. Ces questions pourraient figurer dans un vrai examen'],
+  ['util',  'utilite_apprentissage', '8. Ces questions m\'ont aidé à comprendre la logique']
+];
+var LBL = { 1: 'Très mauvais', 2: 'Mauvais', 3: 'Moyen', 4: 'Bon', 5: 'Très bon' };
 
 function initLikert() {
-  ['gram','nat','cla','dist','pert','bloom','acc','util'].forEach(function(id) {
-    var div = document.getElementById('lk-'+id);
-    div.innerHTML = '';
-    for (var v=1; v<=5; v++) {
-      var lbl = document.createElement('label');
-      lbl.className = 'lk';
-      lbl.innerHTML = '<input type="radio" name="lk-'+id+'" value="'+v+'">'
-        +'<span>'+v+'</span><small>'+LBL[v]+'</small>';
-      div.appendChild(lbl);
+  var html = '';
+  CRITERES.forEach(function (c) {
+    html += '<div class="likert-group"><label class="q">' + c[2] + '</label><div class="likert-row">';
+    for (var v = 1; v <= 5; v++) {
+      html += '<label class="lk"><input type="radio" name="lk-' + c[0] + '" value="' + v + '">'
+            + '<span>' + v + '</span><small>' + LBL[v] + '</small></label>';
     }
+    html += '</div></div>';
   });
+  el('likerts').innerHTML = html;
 }
 
-function getLK(n) {
-  var s = document.querySelector('input[name="lk-'+n+'"]:checked');
-  return s ? parseInt(s.value) : null;
-}
-
-function soumettre() {
-  var ids = ['gram','nat','cla','dist','pert','bloom','acc','util'];
-  var vals = {};
+el('btn-eval').addEventListener('click', function () {
+  var btn = this, err = el('err-eval');
+  var corps = { jeton: S.jeton, commentaire: el('commentaire').value.trim() };
   var manq = 0;
-  ids.forEach(function(id) {
-    vals[id] = getLK(id);
-    if (!vals[id]) manq++;
+  CRITERES.forEach(function (c) {
+    var s = document.querySelector('input[name="lk-' + c[0] + '"]:checked');
+    if (!s) manq++; else corps[c[1]] = parseInt(s.value, 10);
   });
-  var err = document.getElementById('err-eval');
-  if (manq > 0) {
-    err.textContent = manq+' critère(s) sans réponse.';
-    err.style.display = 'block'; return;
-  }
-  err.style.display = 'none';
+  if (manq) { err.textContent = manq + ' critère(s) sans réponse.'; err.style.display = 'block'; return; }
+  err.style.display = 'none'; btn.disabled = true;
+  api('POST', '/api/exp/evaluation_qualitative', corps).then(function () { finir(); });
+});
 
-  fetch(API+'/api/exp/evaluation_qualitative', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({
-      session_id:S.sid, participant_id:S.pid,
-      grammaticalite:      vals.gram,
-      naturalite:          vals.nat,
-      clarte:              vals.cla,
-      plausibilite_dist:   vals.dist,
-      pertinence_obj:      vals.pert,
-      alignement_bloom:    vals.bloom,
-      acceptabilite:       vals.acc,
-      utilite_apprentissage:vals.util,
-      commentaire: document.getElementById('commentaire').value.trim()
-    })
-  })
-  .then(function(){ terminer(); })
-  .catch(function(){ terminer(); });
-}
-
-function terminer() {
-  fetch(API+'/api/exp/terminer/'+S.sid, {method:'POST'})
-  .then(function(r){ return r.json(); })
-  .then(function(d) {
-    var pct = Math.round(S.ok/NB_Q*100);
-    document.getElementById('fin-score').textContent = pct+'%';
-    document.getElementById('fin-total').textContent  = NB_Q;
-    document.getElementById('fin-ok').textContent     = S.ok;
-    document.getElementById('fin-tps').textContent    =
-      Math.round(S.tpsTotal/NB_Q)+'s';
-    document.getElementById('fin-code').textContent   = S.code||'—';
-    var msg = pct>=80 ? 'Excellent résultat !'
-            : pct>=60 ? 'Bon résultat. Continuez à vous entraîner.'
-            : 'Continuez à pratiquer — RALI-DEM est là pour vous aider.';
-    document.getElementById('fin-msg').textContent = msg;
+function finir() {
+  api('POST', '/api/exp/terminer/' + encodeURIComponent(S.jeton)).then(function (d) {
+    el('fin-score').textContent = Math.round(d.score_global || 0) + ' %';
+    el('fin-detail').textContent = (d.nb_correctes || 0) + ' bonnes réponses sur ' + (d.nb_total || 0) + '.';
+    el('fin-code').textContent = d.code_anonyme || S.code || '—';
+    ecrire({});
     go('s-fin');
-  })
-  .catch(function() { go('s-fin'); });
+  });
 }
+
+// ── Reprise après rechargement de la page ────────────────────
+(function () {
+  var st = lire();
+  if (!st.jeton) return;
+  S.jeton = st.jeton; S.code = st.code;
+  go('s-question');
+  if (st.attente) {
+    // Une réponse n'avait pas été confirmée par le serveur : on la renvoie
+    // (le serveur ne l'enregistre qu'une fois), puis on continue.
+    api('POST', '/api/exp/reponse', st.attente).then(function () {
+      var s2 = lire(); delete s2.attente; ecrire(s2); chargerQ();
+    });
+  } else {
+    chargerQ();
+  }
+})();
 </script>
 </body>
 </html>
