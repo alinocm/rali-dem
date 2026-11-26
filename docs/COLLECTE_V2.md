@@ -21,30 +21,47 @@ Branche `corrections-p0`. Cette notice décrit ce qui change, ce qu'il reste
 Les tables existantes sont conservées ; la migration ajoute des colonnes et des
 tables au démarrage du serveur, sans toucher aux données de 2026.
 
+## Décisions prises (26/11/2026)
+
+- Conservation des données : 5 ans après la fin de la thèse ; contact : alinocm@gmail.com.
+- CONTRAP compte 1 négation (pas de double négation au sens du protocole).
+- Pas de correction pendant la session (`FEEDBACK_IMMEDIAT = False`) :
+  l'étudiant voit seulement « Réponse enregistrée ».
+
 ## À faire avant la collecte
 
-1. **Consentement** : compléter dans `frontend/experimentation_ui.html` la durée
-   de conservation et l'adresse de contact (repérées par `À COMPLÉTER`).
-2. **CONTRAP** : confirmer le nombre de négations (1 ou 2) dans
-   `NEGATIONS_PAR_OBJECTIF` (`backend/generator.py`).
-3. **Railway** : vérifier qu'un volume persistant est monté sur `/data`
-   (la base y est créée quand `RAILWAY_ENVIRONMENT` est défini) et prévoir une
-   sauvegarde quotidienne du fichier `/data/rali_dem.db`.
-4. **Banque d'items** : la préparer et la faire valider (ci-dessous).
-5. **Pilote** : faire passer 10 à 15 étudiants, puis vérifier l'export.
+1. **Sauvegarder les données 2026** : télécharger les trois exports v1 depuis la
+   page administrateur **avant** tout redéploiement (la base actuelle n'est pas
+   sur un volume et sera effacée).
+2. **Railway** : attacher un volume persistant monté sur `/data` au service
+   `web` (la base y est créée quand `RAILWAY_ENVIRONMENT` est défini) et prévoir
+   une sauvegarde régulière.
+3. **Banque d'items** : la préparer et la faire valider (ci-dessous).
+4. **Pilote** : faire passer 10 à 15 étudiants, puis vérifier l'export.
 
-## Préparer la banque d'items (administrateur)
+## Préparer la banque d'items
 
-1. Générer des candidats : `POST /api/exp/banque/generer?nb_par_combinaison=3`
-   (3 candidats pour chacune des 30 combinaisons objectif × mode).
-2. Télécharger la fiche de relecture : `GET /api/exp/banque/export`.
-3. Les enseignants remplissent la colonne `statut` (`valide` ou `rejete`) et un
-   commentaire. Il faut au moins un item `valide` par combinaison ; si
-   plusieurs sont validés, le plus ancien est retenu pour tous les étudiants.
-4. Renvoyer les décisions : `POST /api/exp/banque/validation` avec
-   `{"lignes": [{"code_item": "...", "statut": "valide", "commentaire": "..."}]}`.
-5. Contrôler : `GET /api/exp/banque/etat` doit indiquer 30 combinaisons validées.
-   Une combinaison sans item validé est servie par le générateur.
+Tout se fait dans la page administrateur, menu **Expérimentation**, carte
+« Banque d'items ».
+
+1. **Générer les candidats** (3 par combinaison par défaut, soit 90 items).
+2. **Télécharger la fiche** `banque_items_relecture.csv` et l'ouvrir dans Excel
+   (séparateur `;`). Les enseignants écrivent `valide` ou `rejete` dans la
+   colonne `statut` (les accents et les majuscules sont acceptés) et, si
+   besoin, un commentaire. Ne pas modifier `code_item`.
+3. **Envoyer la fiche remplie**, enregistrée au format CSV. On peut l'envoyer
+   plusieurs fois ; les lignes non reconnues sont signalées.
+4. Le compteur doit indiquer **30 / 30 combinaisons validées**. Pour les
+   combinaisons restantes, utiliser « Seulement les combinaisons sans item
+   validé », puis recommencer les étapes 2 et 3.
+
+Si plusieurs items sont validés pour une combinaison, le plus ancien est
+retenu. Dès qu'un item retenu a été présenté à un étudiant, sa combinaison est
+verrouillée (🔒) : on ne peut plus la changer, pour que tous les étudiants
+reçoivent le même item. Les items du pilote sont donc ceux de la collecte.
+
+Les mêmes opérations restent possibles par l'API (`/api/exp/banque/generer`,
+`/export`, `/validation`, `/validation_csv`, `/etat`).
 
 ## Exports (administrateur)
 
@@ -58,8 +75,7 @@ tables au démarrage du serveur, sans toucher aux données de 2026.
 ## Réglages (`backend/experimentation.py`)
 
 - `NB_GENERES = 6` : nombre de questions générées par session.
-- `FEEDBACK_IMMEDIAT = True` : correction affichée après chaque question
-  (point P1 encore à décider).
+- `FEEDBACK_IMMEDIAT = False` : aucune correction pendant la session.
 - `CONSENTEMENT_VERSION` : à changer si le texte du consentement change.
 
 Les coefficients des deux formules sont dans `backend/calculator.py`

@@ -33,7 +33,7 @@ from typing import Optional, Dict, List
 PROTOCOLE_VERSION    = "v2"
 CONSENTEMENT_VERSION = "2026-11-26"
 NB_GENERES           = 6        # questions generees par session (3 par mode)
-FEEDBACK_IMMEDIAT    = True     # correction apres chaque question (P1 : a decider)
+FEEDBACK_IMMEDIAT    = False    # pas de correction pendant la session (decision du 26/11/2026)
 
 OBJECTIFS = [
     "PROP", "VVER", "TVER", "NEG_SIMPLE", "CONN_ID",
@@ -403,15 +403,22 @@ def _enregistrer_item(cur, q: Dict, source: str, statut: str) -> int:
     return cur.lastrowid
 
 
-def generer_banque_candidats(nb_par_combinaison: int = 3) -> Dict:
+def generer_banque_candidats(nb_par_combinaison: int = 3,
+                             seulement_manquantes: bool = False) -> Dict:
     """Genere des items candidats pour chaque (objectif, mode), a faire
-    relire par les enseignants avant la collecte."""
+    relire par les enseignants avant la collecte. Avec
+    seulement_manquantes, ne genere que pour les combinaisons qui n'ont
+    pas encore d'item valide (apres un tour de relecture)."""
     from generator import generer_question, EtatGeneration
+    nb_par_combinaison = max(1, min(int(nb_par_combinaison), 10))
     conn = _connexion()
     cur  = conn.cursor()
+    deja = _banque_validee(cur) if seulement_manquantes else {}
     crees = 0
     for obj in OBJECTIFS:
         for mode in MODES:
+            if (obj, mode) in deja:
+                continue
             etat = EtatGeneration()
             for _ in range(nb_par_combinaison):
                 q = generer_question(obj, mode, etat=etat)
@@ -423,58 +430,123 @@ def generer_banque_candidats(nb_par_combinaison: int = 3) -> Dict:
     return {"success": True, "items_crees": crees}
 
 
+COLONNES_RELECTURE = ["code_item", "objectif_code", "mode_bloom", "enonce",
+                      "bonne_reponse", "distracteur_1", "distracteur_2",
+                      "distracteur_3", "statut", "commentaire"]
+
+
 def exporter_banque_csv() -> str:
-    """Fiche de relecture : un item par ligne, a renvoyer avec la
-    colonne statut remplie (valide / rejete) et un commentaire."""
+    """Fiche de relecture pour les enseignants : un item par ligne.
+    Separateur ';' pour qu'Excel en francais ouvre directement les
+    colonnes. A renvoyer avec la colonne statut remplie (valide ou
+    rejete) et, si besoin, un commentaire."""
     conn = _connexion()
     rows = conn.execute("""
-        SELECT code_item, statut, objectif_code, mode_bloom, niveau_complexite,
+        SELECT code_item, statut, objectif_code, mode_bloom,
                enonce, reponse_correcte, distracteurs_json,
-               ert_a_s, ert_b_s, commentaire_validation
+               commentaire_validation
         FROM exp_items WHERE source = 'banque'
         ORDER BY objectif_code, mode_bloom, id
     """).fetchall()
     conn.close()
     out = io.StringIO()
-    w = csv.writer(out)
-    w.writerow(["code_item", "statut", "objectif_code", "mode_bloom",
-                "niveau_complexite", "enonce", "bonne_reponse",
-                "distracteur_1", "distracteur_2", "distracteur_3",
-                "ert_a_s", "ert_b_s", "commentaire"])
+    w = csv.writer(out, delimiter=";")
+    w.writerow(COLONNES_RELECTURE)
     for r in rows:
         d = json.loads(r["distracteurs_json"]) + ["", "", ""]
-        w.writerow([r["code_item"], r["statut"], r["objectif_code"],
-                    r["mode_bloom"], r["niveau_complexite"], r["enonce"],
-                    r["reponse_correcte"], d[0], d[1], d[2],
-                    r["ert_a_s"], r["ert_b_s"],
-                    r["commentaire_validation"] or ""])
+        w.writerow([r["code_item"], r["objectif_code"], r["mode_bloom"],
+                    r["enonce"], r["reponse_correcte"], d[0], d[1], d[2],
+                    r["statut"], r["commentaire_validation"] or ""])
     return out.getvalue()
 
 
+_STATUTS = {
+    "valide": "valide", "validé": "valide", "v": "valide", "oui": "valide",
+    "ok": "valide",
+    "rejete": "rejete", "rejeté": "rejete", "r": "rejete", "non": "rejete",
+    "candidat": "candidat", "": "candidat",
+}
+
+
+def _normaliser_statut(valeur) -> Optional[str]:
+    return _STATUTS.get((valeur or "").strip().lower())
+
+
+def lire_fiche_relecture(contenu: bytes) -> List[Dict]:
+    """Lit la fiche renvoyee par les enseignants. Accepte l'UTF-8 (avec
+    ou sans BOM) et l'encodage Windows d'Excel, et le separateur ';',
+    ',' ou tabulation."""
+    for enc in ("utf-8-sig", "cp1252", "latin-1"):
+        try:
+            texte = contenu.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    premiere = texte.splitlines()[0] if texte.strip() else ""
+    sep = max((";", ",", "\t"), key=premiere.count)
+    lecteur = csv.DictReader(io.StringIO(texte), delimiter=sep)
+    if not lecteur.fieldnames or "code_item" not in [
+            (c or "").strip() for c in lecteur.fieldnames]:
+        raise ValueError("La fiche doit contenir la colonne code_item "
+                         "(utilisez la fiche telechargee depuis l'application).")
+    lignes = []
+    for ligne in lecteur:
+        ligne = {(k or "").strip(): (v or "") for k, v in ligne.items()}
+        if ligne.get("code_item", "").strip():
+            lignes.append(ligne)
+    return lignes
+
+
+def _items_servis(cur) -> set:
+    return {r[0] for r in cur.execute(
+        "SELECT DISTINCT item_id FROM exp_session_items WHERE item_id IS NOT NULL")}
+
+
 def importer_validation_banque(lignes: List[Dict]) -> Dict:
-    """Applique les decisions des relecteurs : chaque ligne contient
-    code_item, statut ('valide' ou 'rejete') et un commentaire."""
+    """Applique les decisions des relecteurs (code_item, statut,
+    commentaire). Une fois qu'un item de la banque a ete servi a un
+    etudiant, sa combinaison objectif x mode est verrouillee : on ne
+    peut plus changer l'item retenu, pour que tous les etudiants
+    recoivent le meme."""
     conn = _connexion()
     cur  = conn.cursor()
-    maj, ignores = 0, []
+    servis = _items_servis(cur)
+    retenus = _banque_validee(cur)
+    combis_verrouillees = {c for c, item in retenus.items() if item in servis}
+    maj, inchanges, inconnus, statut_invalide, verrouilles = 0, 0, [], [], []
     for l in lignes:
-        code   = (l.get("code_item") or "").strip()
-        statut = (l.get("statut") or "").strip().lower()
-        if statut not in ("valide", "rejete", "candidat"):
-            ignores.append(code)
+        code = (l.get("code_item") or "").strip()
+        statut = _normaliser_statut(l.get("statut"))
+        if statut is None:
+            statut_invalide.append(code)
+            continue
+        item = cur.execute("""SELECT id, statut, objectif_code, mode_bloom,
+                                     commentaire_validation
+                              FROM exp_items WHERE code_item=? AND source='banque'""",
+                           (code,)).fetchone()
+        if not item:
+            inconnus.append(code)
+            continue
+        commentaire = (l.get("commentaire") or "").strip()
+        if item["statut"] == statut and (item["commentaire_validation"] or "") == commentaire:
+            inchanges += 1
+            continue
+        if statut != item["statut"] and (
+                item["id"] in servis
+                or (item["objectif_code"], item["mode_bloom"]) in combis_verrouillees):
+            verrouilles.append(code)
             continue
         cur.execute("""
             UPDATE exp_items SET statut=?, commentaire_validation=?,
                    date_validation=?
-            WHERE code_item=? AND source='banque'
-        """, (statut, l.get("commentaire", ""), _now(), code))
-        if cur.rowcount:
-            maj += 1
-        else:
-            ignores.append(code)
+            WHERE id=?
+        """, (statut, commentaire, _now(), item["id"]))
+        maj += 1
     conn.commit()
     conn.close()
-    return {"success": True, "mis_a_jour": maj, "ignores": ignores}
+    return {"success": True, "mis_a_jour": maj, "inchanges": inchanges,
+            "codes_inconnus": inconnus, "statuts_invalides": statut_invalide,
+            "verrouilles": verrouilles, "etat": etat_banque()}
 
 
 def _banque_validee(cur) -> Dict:
@@ -491,16 +563,38 @@ def etat_banque() -> Dict:
     conn = _connexion()
     cur  = conn.cursor()
     valides = _banque_validee(cur)
+    servis = _items_servis(cur)
     compte = cur.execute("""
         SELECT statut, COUNT(*) n FROM exp_items WHERE source='banque'
         GROUP BY statut
     """).fetchall()
+    detail = {(r["objectif_code"], r["mode_bloom"], r["statut"]): r["n"]
+              for r in cur.execute("""
+        SELECT objectif_code, mode_bloom, statut, COUNT(*) n
+        FROM exp_items WHERE source='banque'
+        GROUP BY objectif_code, mode_bloom, statut""")}
+    codes = {r["id"]: r["code_item"] for r in cur.execute(
+        "SELECT id, code_item FROM exp_items WHERE source='banque'")}
     conn.close()
-    manquantes = [f"{o}/{m}" for o in OBJECTIFS for m in MODES
-                  if (o, m) not in valides]
+    combinaisons = []
+    for o in OBJECTIFS:
+        for m in MODES:
+            item = valides.get((o, m))
+            combinaisons.append({
+                "objectif_code": o, "mode_bloom": m,
+                "candidats": detail.get((o, m, "candidat"), 0),
+                "valides": detail.get((o, m, "valide"), 0),
+                "rejetes": detail.get((o, m, "rejete"), 0),
+                "item_retenu": codes.get(item) if item else None,
+                "verrouille": bool(item and item in servis),
+            })
+    manquantes = [f"{c['objectif_code']}/{c['mode_bloom']}"
+                  for c in combinaisons if not c["item_retenu"]]
     return {"par_statut": {r["statut"]: r["n"] for r in compte},
             "combinaisons_validees": len(valides),
-            "combinaisons_manquantes": manquantes}
+            "nb_combinaisons": len(OBJECTIFS) * len(MODES),
+            "combinaisons_manquantes": manquantes,
+            "combinaisons": combinaisons}
 
 
 # =============================================================

@@ -582,7 +582,7 @@ NEGATIONS_PAR_OBJECTIF = {
     "NEG_IMP":    1,
     "MORGAN":     1,
     "NEG_QUANT":  2,
-    "CONTRAP":    1,   # À CONFIRMER par les auteurs (1 ou 2)
+    "CONTRAP":    1,   # une seule negation au sens du protocole (pas de double negation)
 }
 
 

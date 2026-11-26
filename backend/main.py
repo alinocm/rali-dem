@@ -79,7 +79,7 @@ from experimentation import (
     exporter_donnees_distracteurs_csv,
     exporter_eval_qualitative_csv,
     generer_banque_candidats, exporter_banque_csv,
-    importer_validation_banque, etat_banque,
+    importer_validation_banque, etat_banque, lire_fiche_relecture,
     get_stats_experimentation,
     CONSENTEMENT_VERSION,
 )
@@ -954,7 +954,9 @@ def route_exp_liste_participants(
             (SELECT COUNT(*) FROM exp_reponses r
               WHERE r.participant_id = p.id)            AS nb_reponses,
             (SELECT AVG(r.est_correct) FROM exp_reponses r
-              WHERE r.participant_id = p.id)            AS taux_reussite
+              WHERE r.participant_id = p.id)            AS taux_reussite,
+            (SELECT AVG(r.temps_reel_s) FROM exp_reponses r
+              WHERE r.participant_id = p.id)            AS temps_moyen
         FROM exp_participants p
         ORDER BY p.date_inscription DESC
     """).fetchall()
@@ -981,7 +983,7 @@ def route_exp_detail_participant(
         raise HTTPException(404, "Participant non trouve")
     reponses = cur.execute("""
         SELECT numero_question, objectif_code, mode_bloom, source,
-               est_correct, temps_reel_s, ert_a_s, ert_b_s,
+               est_correct, temps_reel_s, ert_a_s, ert_b_s, ert_predit_s,
                distracteur_choisi, reponse_correcte
         FROM exp_reponses WHERE participant_id = ?
         ORDER BY session_id, numero_question
@@ -1072,23 +1074,40 @@ def route_exp_export_qual_v1(authorization: Optional[str] = Header(None)):
 
 @app.post("/api/exp/banque/generer")
 def route_exp_banque_generer(nb_par_combinaison: int = 3,
+                             seulement_manquantes: bool = False,
                              authorization: Optional[str] = Header(None)):
     """Genere des items candidats (a relire par les enseignants)."""
     _verifier_admin(authorization)
-    return generer_banque_candidats(nb_par_combinaison)
+    return generer_banque_candidats(nb_par_combinaison, seulement_manquantes)
 
 @app.get("/api/exp/banque/export")
 def route_exp_banque_export(authorization: Optional[str] = Header(None)):
-    """Fiche de relecture de la banque (CSV)."""
+    """Fiche de relecture de la banque (CSV, separateur ';')."""
     _verifier_admin(authorization)
     return _reponse_csv(exporter_banque_csv(), "banque_items_relecture.csv")
 
 @app.post("/api/exp/banque/validation")
 def route_exp_banque_validation(d: ValidationBanque,
                                 authorization: Optional[str] = Header(None)):
-    """Applique les decisions des relecteurs (code_item, statut, commentaire)."""
+    """Decisions des relecteurs au format JSON."""
     _verifier_admin(authorization)
     return importer_validation_banque(d.lignes)
+
+@app.post("/api/exp/banque/validation_csv")
+async def route_exp_banque_validation_csv(request: Request,
+                                          authorization: Optional[str] = Header(None)):
+    """Fiche de relecture remplie, envoyee telle quelle (corps = fichier CSV)."""
+    _verifier_admin(authorization)
+    contenu = await request.body()
+    if not contenu:
+        raise HTTPException(400, "Fichier vide")
+    if len(contenu) > 5_000_000:
+        raise HTTPException(413, "Fichier trop volumineux")
+    try:
+        lignes = lire_fiche_relecture(contenu)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return importer_validation_banque(lignes)
 
 @app.get("/api/exp/banque/etat")
 def route_exp_banque_etat(authorization: Optional[str] = Header(None)):

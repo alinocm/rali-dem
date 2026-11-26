@@ -86,11 +86,11 @@ textarea { width: 100%; padding: 10px; border: 1.5px solid #ccc; border-radius: 
         <li>Votre nom, votre prénom et votre e-mail sont conservés par le seul
             chercheur responsable et ne sont jamais transmis. Les fichiers
             d'analyse ne contiennent qu'un code anonyme.</li>
-        <li>Les données sont conservées <!-- À COMPLÉTER AVANT LA COLLECTE -->
-            [durée de conservation à préciser], puis l'identité est effacée.</li>
+        <li>Les données sont conservées pendant 5 ans après la fin de la
+            thèse, puis votre identité est effacée.</li>
         <li>Vous pouvez arrêter à tout moment. Pour retirer vos données,
-            écrivez à <!-- À COMPLÉTER AVANT LA COLLECTE -->
-            [adresse de contact à préciser] en indiquant votre code anonyme.</li>
+            écrivez à <a href="mailto:alinocm@gmail.com">alinocm@gmail.com</a>
+            en indiquant votre code anonyme.</li>
       </ul>
       <div class="consent-row">
         <input type="checkbox" id="cb">
@@ -329,6 +329,9 @@ function envoyerReponse(corps) {
         ? '<div class="ok"><b>Bonne réponse.</b></div>'
         : '<div class="ko"><b>Réponse incorrecte.</b> Bonne réponse : '
           + esc(r.reponse_correcte) + '</div>';
+      zone.style.display = 'block';
+    } else {
+      zone.innerHTML = '<div>Réponse enregistrée.</div>';
       zone.style.display = 'block';
     }
     el('btn-val').style.display = 'none';
