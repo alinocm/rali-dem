@@ -69,15 +69,19 @@ from tracking  import (
 )
 from experimentation import (
     init_tables_experimentation,
-    inscrire_participant, get_participant_by_email,
-    creer_session_exp, enregistrer_reponse_exp,
+    inscrire_participant,
+    creer_session_exp, question_suivante, enregistrer_reponse_exp,
     terminer_session_exp,
     enregistrer_eval_qualitative,
     get_synthese_qualitative,
+    exporter_reponses_v2_csv, exporter_items_csv,
     exporter_donnees_ert_csv,
     exporter_donnees_distracteurs_csv,
     exporter_eval_qualitative_csv,
-    get_stats_experimentation
+    generer_banque_candidats, exporter_banque_csv,
+    importer_validation_banque, etat_banque,
+    get_stats_experimentation,
+    CONSENTEMENT_VERSION,
 )
 
 from stats import (
@@ -406,22 +410,24 @@ class InscriptionParticipant(BaseModel):
     niveau_etudes: str
     etablissement: str
     consentement: bool
+    consentement_version: Optional[str] = None
     utilisateur_id: Optional[int] = None
 
 class DemandeSessionExp(BaseModel):
     participant_id: int
-    protocole: str = "standard"
-    nb_questions: int = 30
 
 class ReponseExp(BaseModel):
-    session_id: int
-    participant_id: int
-    numero_question: int
-    question_data: dict
-    reponse: dict
+    jeton: str
+    rang: int
+    index_choisi: int
+    temps_client_ms: Optional[float] = None
+    temps_cache_ms: Optional[float] = None
+    nb_changements: Optional[int] = None
+    timestamp_debut: Optional[str] = None
+    timestamp_fin: Optional[str] = None
 
-class DemandeTerminerExp(BaseModel):
-    session_id: int
+class ValidationBanque(BaseModel):
+    lignes: List[dict]
 
 class DemandeRepExamTrack(BaseModel):
     session_examen_id: int
@@ -873,33 +879,52 @@ def route_export_stats_spss(authorization: Optional[str] = Header(None)):
 
 @app.post("/api/exp/inscrire")
 def route_exp_inscrire(d: InscriptionParticipant):
-    """Inscription d'un participant a l'experimentation.
-    Accessible sans authentification -- formulaire public."""
+    """Inscription (formulaire public). Un e-mail deja inscrit retrouve
+    son participant : la session interrompue peut alors reprendre."""
     return inscrire_participant(
-        d.nom, d.prenom, d.email,
-        d.niveau_etudes, d.etablissement,
-        d.consentement, d.utilisateur_id
+        d.nom, d.prenom, d.email, d.niveau_etudes, d.etablissement,
+        d.consentement, d.utilisateur_id, d.consentement_version
     )
 
+@app.get("/api/exp/consentement")
+def route_exp_consentement():
+    """Version du texte de consentement attendue par le serveur."""
+    return {"version": CONSENTEMENT_VERSION}
+
 @app.post("/api/exp/session")
-def route_exp_creer_session(d: DemandeSessionExp):
-    """Cree une session experimentale pour un participant."""
-    return creer_session_exp(
-        d.participant_id, d.protocole, d.nb_questions
-    )
+def route_exp_creer_session(d: DemandeSessionExp, request: Request):
+    """Cree la session (plan de 30 questions) ou reprend celle en cours.
+    Renvoie un jeton secret qui identifie la session."""
+    return creer_session_exp(d.participant_id,
+                             request.headers.get("user-agent", ""))
+
+@app.get("/api/exp/question/{jeton}")
+def route_exp_question(jeton: str):
+    """Prochaine question de la session, sans la bonne reponse ni les
+    temps estimes."""
+    r = question_suivante(jeton)
+    if not r.get("success"):
+        raise HTTPException(404, r.get("error", "Session inconnue"))
+    return r
 
 @app.post("/api/exp/reponse")
 def route_exp_reponse(d: ReponseExp):
-    """Enregistre une reponse avec temps reel et distracteur choisi."""
-    return enregistrer_reponse_exp(
-        d.session_id, d.participant_id,
-        d.numero_question, d.question_data, d.reponse
-    )
+    """Enregistre une reponse (une seule fois par question)."""
+    r = enregistrer_reponse_exp(
+        d.jeton, d.rang, d.index_choisi, d.temps_client_ms,
+        d.temps_cache_ms, d.nb_changements, d.timestamp_debut,
+        d.timestamp_fin)
+    if not r.get("success"):
+        raise HTTPException(400, r.get("error", "Reponse refusee"))
+    return r
 
-@app.post("/api/exp/terminer/{session_id}")
-def route_exp_terminer(session_id: int):
-    """Cloture une session experimentale."""
-    return terminer_session_exp(session_id)
+@app.post("/api/exp/terminer/{jeton}")
+def route_exp_terminer(jeton: str):
+    """Cloture la session."""
+    r = terminer_session_exp(jeton)
+    if not r.get("success"):
+        raise HTTPException(404, r.get("error", "Session inconnue"))
+    return r
 
 @app.get("/api/exp/stats")
 def route_exp_stats(authorization: Optional[str] = Header(None)):
@@ -911,26 +936,26 @@ def route_exp_stats(authorization: Optional[str] = Header(None)):
 def route_exp_liste_participants(
     authorization: Optional[str] = Header(None)
 ):
-    """Liste tous les participants avec leurs informations completes."""
+    """Liste des participants avec leur identite (admin seulement ;
+    l'identite n'apparait dans aucun export)."""
     _verifier_admin(authorization)
     from experimentation import _connexion
     conn = _connexion()
-    cur  = conn.cursor()
-    rows = cur.execute("""
+    rows = conn.execute("""
         SELECT
             p.id, p.code_anonyme, p.nom, p.prenom, p.email,
             p.niveau_etudes, p.etablissement, p.date_inscription,
-            COUNT(DISTINCT s.id)  as nb_sessions,
-            COUNT(DISTINCT r.id)  as nb_reponses,
-            AVG(r.est_correct)    as taux_reussite,
-            AVG(r.temps_reel_s)   as temps_moyen,
-            e.score_global        as score_qualitatif
+            p.consentement_version, p.consentement_date,
+            (SELECT COUNT(*) FROM exp_sessions s
+              WHERE s.participant_id = p.id)            AS nb_sessions,
+            (SELECT s.statut FROM exp_sessions s
+              WHERE s.participant_id = p.id
+              ORDER BY s.id DESC LIMIT 1)               AS statut_derniere_session,
+            (SELECT COUNT(*) FROM exp_reponses r
+              WHERE r.participant_id = p.id)            AS nb_reponses,
+            (SELECT AVG(r.est_correct) FROM exp_reponses r
+              WHERE r.participant_id = p.id)            AS taux_reussite
         FROM exp_participants p
-        LEFT JOIN exp_sessions s
-            ON s.participant_id = p.id AND s.statut = 'terminee'
-        LEFT JOIN exp_reponses r ON r.participant_id = p.id
-        LEFT JOIN exp_eval_qualitative e ON e.participant_id = p.id
-        GROUP BY p.id
         ORDER BY p.date_inscription DESC
     """).fetchall()
     conn.close()
@@ -941,90 +966,40 @@ def route_exp_detail_participant(
     code_anonyme: str,
     authorization: Optional[str] = Header(None)
 ):
-    """Detail complet d'un participant : reponses + evaluation."""
+    """Detail d'un participant : identite, reponses, evaluation (admin)."""
     _verifier_admin(authorization)
     from experimentation import _connexion
     conn = _connexion()
     cur  = conn.cursor()
-
-    # Infos participant
     p = cur.execute("""
         SELECT id, code_anonyme, nom, prenom, email,
                niveau_etudes, etablissement, date_inscription
         FROM exp_participants WHERE code_anonyme = ?
     """, (code_anonyme,)).fetchone()
-
     if not p:
         conn.close()
         raise HTTPException(404, "Participant non trouve")
-
-    pid = p["id"]
-
-    # Reponses par objectif
     reponses = cur.execute("""
-        SELECT objectif_code, mode_bloom, niveau_complexite,
-               ert_predit_s, temps_reel_s, est_correct,
-               distracteur_choisi, reponse_correcte,
-               timestamp_debut
-        FROM exp_reponses
-        WHERE participant_id = ?
-        ORDER BY numero_question
-    """, (pid,)).fetchall()
-
-    # Evaluation qualitative
+        SELECT numero_question, objectif_code, mode_bloom, source,
+               est_correct, temps_reel_s, ert_a_s, ert_b_s,
+               distracteur_choisi, reponse_correcte
+        FROM exp_reponses WHERE participant_id = ?
+        ORDER BY session_id, numero_question
+    """, (p["id"],)).fetchall()
     eval_q = cur.execute("""
-        SELECT grammaticalite, naturalite, clarte,
-               plausibilite_dist, pertinence_obj, alignement_bloom,
-               acceptabilite, utilite_apprentissage,
-               score_coherence, score_plausibilite,
-               score_acceptabilite, score_global, commentaire
-        FROM exp_eval_qualitative
-        WHERE participant_id = ?
-        ORDER BY date_eval DESC LIMIT 1
-    """, (pid,)).fetchone()
-
+        SELECT * FROM exp_eval_qualitative WHERE participant_id = ?
+        ORDER BY id DESC LIMIT 1
+    """, (p["id"],)).fetchone()
     conn.close()
-
-    return {
-        "participant": dict(p),
-        "reponses": [dict(r) for r in reponses],
-        "evaluation": dict(eval_q) if eval_q else None,
-        "stats": {
-            "nb_reponses": len(reponses),
-            "nb_correctes": sum(1 for r in reponses if r["est_correct"]),
-            "taux_reussite": round(
-                sum(1 for r in reponses if r["est_correct"])
-                / len(reponses) * 100, 1
-            ) if reponses else 0,
-            "temps_moyen": round(
-                sum(r["temps_reel_s"] for r in reponses)
-                / len(reponses), 1
-            ) if reponses else 0,
-            "ert_moyen": round(
-                sum(r["ert_predit_s"] for r in reponses)
-                / len(reponses), 1
-            ) if reponses else 0,
-        }
-    }
-
-@app.get("/api/exp/export/ert")
-def route_exp_export_ert(authorization: Optional[str] = Header(None)):
-    """Export CSV pour validation ERT : temps_reel vs ert_predit."""
-    _verifier_admin(authorization)
-    contenu = exporter_donnees_ert_csv()
-    return Response(
-        content=contenu.encode("utf-8-sig"),
-        media_type="text/csv",
-        headers={"Content-Disposition":
-                 'attachment; filename="exp_validation_ert.csv"'}
-    )
+    return {"participant": dict(p),
+            "reponses": [dict(r) for r in reponses],
+            "evaluation": dict(eval_q) if eval_q else None}
 
 
 # -- Evaluation qualitative -----------------------------------
 
 class EvalQualitative(BaseModel):
-    session_id: int
-    participant_id: int
+    jeton: str
     grammaticalite: int
     naturalite: int
     clarte: int
@@ -1037,44 +1012,88 @@ class EvalQualitative(BaseModel):
 
 @app.post("/api/exp/evaluation_qualitative")
 def route_exp_eval(d: EvalQualitative):
-    """Enregistre l'evaluation qualitative finale de l'apprenant."""
-    return enregistrer_eval_qualitative(
-        d.session_id, d.participant_id,
-        d.grammaticalite, d.naturalite, d.clarte,
+    """Evaluation finale (une seule par session)."""
+    r = enregistrer_eval_qualitative(
+        d.jeton, d.grammaticalite, d.naturalite, d.clarte,
         d.plausibilite_dist, d.pertinence_obj, d.alignement_bloom,
-        d.acceptabilite, d.utilite_apprentissage,
-        d.commentaire
-    )
+        d.acceptabilite, d.utilite_apprentissage, d.commentaire)
+    if not r.get("success"):
+        raise HTTPException(400, r.get("error", "Evaluation refusee"))
+    return r
 
 @app.get("/api/exp/synthese_qualitative")
 def route_exp_synthese(authorization: Optional[str] = Header(None)):
-    """Synthese des evaluations qualitatives (admin)."""
     _verifier_admin(authorization)
     return get_synthese_qualitative()
 
+
+# -- Exports (admin ; sans nom, prenom ni e-mail) ---------------
+
+def _reponse_csv(contenu: str, nom: str) -> Response:
+    return Response(content=contenu.encode("utf-8-sig"), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{nom}"'})
+
+@app.get("/api/exp/export/reponses")
+def route_exp_export_reponses(authorization: Optional[str] = Header(None)):
+    """Fichier d'analyse v2 : reponses, ERT-A, ERT-B et composantes."""
+    _verifier_admin(authorization)
+    return _reponse_csv(exporter_reponses_v2_csv(), "exp_v2_reponses.csv")
+
+@app.get("/api/exp/export/items")
+def route_exp_export_items(authorization: Optional[str] = Header(None)):
+    _verifier_admin(authorization)
+    return _reponse_csv(exporter_items_csv(), "exp_v2_items.csv")
+
 @app.get("/api/exp/export/qualitatif")
 def route_exp_export_qual(authorization: Optional[str] = Header(None)):
-    """Export CSV des evaluations qualitatives."""
     _verifier_admin(authorization)
-    contenu = exporter_eval_qualitative_csv()
-    return Response(
-        content=contenu.encode("utf-8-sig"),
-        media_type="text/csv",
-        headers={"Content-Disposition":
-                 'attachment; filename="exp_evaluation_qualitative.csv"'}
-    )
+    return _reponse_csv(exporter_eval_qualitative_csv(), "exp_v2_qualitatif.csv")
 
-@app.get("/api/exp/export/distracteurs")
-def route_exp_export_dist(authorization: Optional[str] = Header(None)):
-    """Export CSV pour validation distracteurs."""
+@app.get("/api/exp/export/v1/ert")
+def route_exp_export_ert_v1(authorization: Optional[str] = Header(None)):
+    """Collecte 2026 (protocole v1), colonnes dans l'ordre de l'en-tete."""
     _verifier_admin(authorization)
-    contenu = exporter_donnees_distracteurs_csv()
-    return Response(
-        content=contenu.encode("utf-8-sig"),
-        media_type="text/csv",
-        headers={"Content-Disposition":
-                 'attachment; filename="exp_validation_distracteurs.csv"'}
-    )
+    return _reponse_csv(exporter_donnees_ert_csv(), "exp_v1_validation_ert.csv")
+
+@app.get("/api/exp/export/v1/distracteurs")
+def route_exp_export_dist_v1(authorization: Optional[str] = Header(None)):
+    _verifier_admin(authorization)
+    return _reponse_csv(exporter_donnees_distracteurs_csv(),
+                        "exp_v1_distracteurs.csv")
+
+@app.get("/api/exp/export/v1/qualitatif")
+def route_exp_export_qual_v1(authorization: Optional[str] = Header(None)):
+    _verifier_admin(authorization)
+    return _reponse_csv(exporter_eval_qualitative_csv(None),
+                        "exp_v1_qualitatif.csv")
+
+
+# -- Banque d'items (admin) -------------------------------------
+
+@app.post("/api/exp/banque/generer")
+def route_exp_banque_generer(nb_par_combinaison: int = 3,
+                             authorization: Optional[str] = Header(None)):
+    """Genere des items candidats (a relire par les enseignants)."""
+    _verifier_admin(authorization)
+    return generer_banque_candidats(nb_par_combinaison)
+
+@app.get("/api/exp/banque/export")
+def route_exp_banque_export(authorization: Optional[str] = Header(None)):
+    """Fiche de relecture de la banque (CSV)."""
+    _verifier_admin(authorization)
+    return _reponse_csv(exporter_banque_csv(), "banque_items_relecture.csv")
+
+@app.post("/api/exp/banque/validation")
+def route_exp_banque_validation(d: ValidationBanque,
+                                authorization: Optional[str] = Header(None)):
+    """Applique les decisions des relecteurs (code_item, statut, commentaire)."""
+    _verifier_admin(authorization)
+    return importer_validation_banque(d.lignes)
+
+@app.get("/api/exp/banque/etat")
+def route_exp_banque_etat(authorization: Optional[str] = Header(None)):
+    _verifier_admin(authorization)
+    return etat_banque()
 
 # =============================================================
 # LANCEMENT
