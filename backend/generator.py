@@ -5,7 +5,7 @@
 
 import random
 from calculator import (
-    calculer_complexite, verifier_niveau_cible, estimer_parametres
+    calculer_complexite, estimer_parametres
 )
 
 # ═════════════════════════════════════════════════════════════
@@ -368,7 +368,22 @@ def _neg_quant(quant, nom, v, c):
     if quant == "UNIVERSEL":
         return f"Il existe au moins {art} {mot} qui {ne}{v} pas {c}"
     else:
-        return f"{tous} {pluriel} {nepl}{vpl} pas {c}"
+        # ¬∃x P(x) ≡ ∀x ¬P(x) : « Aucun X ne … » (la tournure
+        # « Tous les X ne … pas » est ambiguë en français)
+        aucun = "Aucune" if nom.get("genre") == "F" else "Aucun"
+        return f"{aucun} {mot} {ne}{v} {c}"
+
+
+def _quant_prop_niee(quant, nom, v, c):
+    """Erreur type : nier la propriété sans changer le quantificateur.
+    ∀x ¬P(x) → « Aucun X ne … » ; ∃x ¬P(x) → « Il existe … qui ne … pas »."""
+    mot = nom["mot"]
+    ne  = "n'" if v[0].lower() in "aeéèêëiîïoôuùûüh" else "ne "
+    art = "une" if nom.get("genre") == "F" else "un"
+    if quant == "UNIVERSEL":
+        aucun = "Aucune" if nom.get("genre") == "F" else "Aucun"
+        return f"{aucun} {mot} {ne}{v} {c}"
+    return f"Il existe au moins {art} {mot} qui {ne}{v} pas {c}"
 
 
 # ─────────────────────────────────────────────────────────────
@@ -461,93 +476,146 @@ def _svc_choisir():
 
 
 # ─────────────────────────────────────────────────────────────
-# GARANTIE D'UNICITÉ PAR HASH (thèse §3.5.7)
-# Hash composite = hash(sujet + verbe + complément + objectif + type)
+# GARANTIE D'UNICITÉ PAR HASH (thèse §3.5.7) ET ÉTAT DE SESSION
+#
+# L'historique des hachages, la mémoire des distracteurs et les
+# réserves VVER/TVER appartiennent à un objet EtatGeneration.
+# Chaque session (expérimentation, examen, mode adaptatif) peut
+# fournir le sien : les questions d'un étudiant ne dépendent plus
+# de ce que les autres utilisateurs du serveur ont généré.
 # ─────────────────────────────────────────────────────────────
 
 import hashlib
+import re
+import threading
 
-_historique_hash: set = set()          # hashes des questions générées
-_distracteurs_utilises: list = []      # distracteurs utilisés (liste ordonnée)
+from calculator import calculer_ert_a, calculer_ert_a_version_publiee, PARAMS_VERSION
+
+
+class EtatGeneration:
+    """Mémoire de génération propre à une session."""
+    def __init__(self):
+        self.historique_hash = set()
+        self.distracteurs_utilises = []
+        self.pool_vver = []
+
+    def reset(self):
+        self.__init__()
+
+
+_ETAT_GLOBAL = EtatGeneration()        # utilisé quand aucun état n'est fourni
+_local = threading.local()
+
+
+def _etat() -> EtatGeneration:
+    return getattr(_local, "etat", None) or _ETAT_GLOBAL
+
 
 def _calculer_hash(enonce: str, reponse: str, objectif: str) -> str:
     """Calcule le hash composite d'une question (thèse §3.5.7)."""
     contenu = f"{objectif}|{enonce.lower().strip()}|{reponse.lower().strip()}"
     return hashlib.sha256(contenu.encode("utf-8")).hexdigest()[:16]
 
-def _est_unique(hash_q: str) -> bool:
-    """Vérifie l'unicité d'une question par son hash."""
-    return hash_q not in _historique_hash
-
-def _enregistrer_hash(hash_q: str):
-    """Enregistre le hash d'une question générée."""
-    _historique_hash.add(hash_q)
 
 def filtrer_distracteurs(candidats: list, n: int = 3) -> list:
     """
-    Sélectionne n distracteurs jamais utilisés dans la session courante.
-    Stratégie :
-      1. Prendre d'abord les candidats jamais vus
-      2. Si pas assez, utiliser les moins récemment utilisés
-      3. Enregistrer tous les sélectionnés pour éviter future répétition
+    Sélectionne n distracteurs, en privilégiant ceux que la session
+    n'a pas encore vus. Les candidats vides sont écartés.
     """
-    global _distracteurs_utilises
-
-    # Mélanger les candidats pour la variété
-    pool = list(candidats)
+    etat = _etat()
+    pool = [d for d in candidats if str(d).strip()]
     random.shuffle(pool)
-
-    # Séparer nouveaux et déjà vus (dans l'ordre d'utilisation)
-    nouveaux = [d for d in pool if d not in _distracteurs_utilises]
-    deja_vus = [d for d in _distracteurs_utilises if d in pool]
-
-    # Sélectionner en priorité les nouveaux
+    nouveaux = [d for d in pool if d not in etat.distracteurs_utilises]
+    deja_vus = [d for d in etat.distracteurs_utilises if d in pool]
     selection = nouveaux[:n]
-
-    # Compléter avec les plus anciennement utilisés si nécessaire
     if len(selection) < n:
         for d in deja_vus:
             if d not in selection:
                 selection.append(d)
             if len(selection) >= n:
                 break
-
-    # Enregistrer les sélectionnés (nouveaux en tête, anciens réutilisés déplacés en fin)
     for d in selection:
-        if d in _distracteurs_utilises:
-            _distracteurs_utilises.remove(d)
-        _distracteurs_utilises.append(d)
-
+        if d in etat.distracteurs_utilises:
+            etat.distracteurs_utilises.remove(d)
+        etat.distracteurs_utilises.append(d)
     random.shuffle(selection)
     return selection[:n]
 
 
-# Pool VVER/TVER pour éviter les répétitions de combinaisons
-_vver_pool_global = []
-_tver_pool_global = []
-
 def reset_session():
-    """Réinitialise la mémoire de session (hash + distracteurs)."""
-    global _historique_hash, _distracteurs_utilises, _vver_pool_global, _tver_pool_global
-    _historique_hash       = set()
-    _distracteurs_utilises = []
-    # Réinitialiser les pools VVER et TVER
-    _vver_pool_global = [
-        (ck, vp, vq)
-        for ck in ["ET","OU","IMP","EQUIV"]
-        for vp,vq in [("V","V"),("V","F"),("F","V"),("F","F")]
-    ]
-    random.shuffle(_vver_pool_global)
-    _tver_pool_global = list(_vver_pool_global)
-    random.shuffle(_tver_pool_global)
+    """Réinitialise l'état global (modules examen et adaptatif)."""
+    _ETAT_GLOBAL.reset()
 
 
 def get_taux_unicite() -> dict:
-    """Retourne les statistiques d'unicité de la session."""
-    return {
-        "nb_questions_uniques": len(_historique_hash),
-        "hashes": list(_historique_hash)[:10],  # aperçu
-    }
+    etat = _etat()
+    return {"nb_questions_uniques": len(etat.historique_hash),
+            "hashes": list(etat.historique_hash)[:10]}
+
+
+# ─────────────────────────────────────────────────────────────
+# STRUCTURE LOGIQUE DE L'ÉNONCÉ (pour ERT-A)
+# ─────────────────────────────────────────────────────────────
+
+def _p_simple(article: str = "DEFINI", negative: bool = False) -> dict:
+    return {"type": "simple", "articles": [article], "negative": negative}
+
+def _p_symbole() -> dict:
+    """Proposition notée P ou Q, sans sujet : difficulté nulle."""
+    return {"type": "simple", "articles": [], "negative": False}
+
+def _p_compose(connecteur: str, p1: dict = None, p2: dict = None) -> dict:
+    return {"type": "compose", "connecteur": connecteur,
+            "p1": p1 or _p_simple(), "p2": p2 or _p_simple()}
+
+
+# ─────────────────────────────────────────────────────────────
+# NOMBRE DE NÉGATIONS PAR OBJECTIF (ERT-B, terme 15·Neg)
+# Règle : 0 = aucune négation, 1 = une négation, 2 = double
+# négation ou négation d'un quantificateur. Les générateurs
+# fixaient 0 partout : la valeur vient désormais de cette table.
+# ─────────────────────────────────────────────────────────────
+
+NEGATIONS_PAR_OBJECTIF = {
+    "NEG_SIMPLE": 1,
+    "NEG_COMP":   1,
+    "NEG_IMP":    1,
+    "MORGAN":     1,
+    "NEG_QUANT":  2,
+    "CONTRAP":    1,   # À CONFIRMER par les auteurs (1 ou 2)
+}
+
+
+# ─────────────────────────────────────────────────────────────
+# NETTOYAGE DES OPTIONS
+# Les explications du type « — erreur : … » signalaient la bonne
+# réponse. Le commentaire après « — » est retiré de TOUTES les
+# options d'un item, sauf lorsqu'il fait partie de la réponse sous
+# une forme commune à toutes les options : « — résultat : … » ou
+# « — car <règle> » (mode Analyse : chaque option, juste ou fausse,
+# porte la règle qui la justifierait).
+# ─────────────────────────────────────────────────────────────
+
+_SEP_COMMENTAIRE = re.compile(r"\s+—\s+(?!résultat\s*:|car\s)")
+
+def _nettoyer_option(opt: str) -> str:
+    opt = str(opt)
+    parties = _SEP_COMMENTAIRE.split(opt, maxsplit=1)
+    return parties[0].strip()
+
+def _nettoyer_options(reponse: str, dist: list):
+    tous = [reponse] + list(dist)
+    if any(_SEP_COMMENTAIRE.search(str(o)) for o in tous):
+        reponse = _nettoyer_option(reponse)
+        dist = [_nettoyer_option(d) for d in dist]
+    # Pas de doublon avec la bonne réponse, pas d'option vide
+    vus, propres = {reponse}, []
+    for d in dist:
+        if d and d not in vus:
+            vus.add(d)
+            propres.append(d)
+    return reponse, propres
+
 
 # ═════════════════════════════════════════════════════════════
 # GÉNÉRATEUR PRINCIPAL
@@ -571,57 +639,54 @@ GABARITS = {
     "CONTRAP":    [{"type":"contrap",     "structure":"SVI"}],
 }
 
+
 def generer_question(objectif_code, mode_bloom="comprehension",
-                     niveau_complexite="moyen", max_tentatives=15):
+                     niveau_complexite=None, max_tentatives=15,
+                     etat: EtatGeneration = None):
     """
-    Génère une question QCM unique selon l'objectif et le niveau.
-    Garantie d'unicité par hash composite (thèse §3.5.7).
+    Génère une question QCM unique pour la session (état fourni ou
+    état global). Si niveau_complexite est donné, le générateur
+    essaie de l'atteindre ; le niveau RÉEL est toujours renvoyé
+    (champ niveau_complexite), avec niveau_demande et niveau_atteint.
     """
     if objectif_code not in GABARITS:
         raise ValueError(f"Objectif inconnu : {objectif_code}")
-    params = estimer_parametres(niveau_complexite, mode_bloom)
+    params = estimer_parametres(niveau_complexite or "moyen", mode_bloom)
 
-    for tentative in range(max_tentatives):
-        try:
-            g = random.choice(GABARITS[objectif_code])
-            q = _construire(g, objectif_code, mode_bloom,
-                            niveau_complexite, params)
+    precedent = getattr(_local, "etat", None)
+    _local.etat = etat
+    try:
+        e = _etat()
+        dernier = None
+        for _ in range(max_tentatives):
+            try:
+                g = random.choice(GABARITS[objectif_code])
+                q = _construire(g, objectif_code, mode_bloom, params)
+            except Exception:
+                continue
             if q is None:
                 continue
-
-            # ── Vérification du niveau ────────────────────────
-            if not verifier_niveau_cible(q["ert_secondes"], niveau_complexite):
-                continue
-
-            # ── Vérification d'unicité par hash ───────────────
             h = _calculer_hash(q["enonce"], q["reponse_correcte"], objectif_code)
-            if not _est_unique(h):
-                continue  # question déjà générée, on réessaie
-
-            # ── Enregistrement du hash ────────────────────────
-            _enregistrer_hash(h)
-            q["hash"] = h
-            # Cohérence : le niveau affiché = niveau demandé
-            q["niveau_complexite"] = niveau_complexite
-            return q
-
-        except Exception:
-            continue
-
-    # Fallback sans contrainte d'unicité ni de niveau
-    # (certains objectifs comme MORGAN/NEG_IMP ne peuvent pas
-    #  atteindre le niveau "moyen" structurellement)
-    g = random.choice(GABARITS[objectif_code])
-    q = _construire(g, objectif_code, mode_bloom, niveau_complexite, params)
-    if q:
-        h = _calculer_hash(q["enonce"], q["reponse_correcte"], objectif_code)
-        _enregistrer_hash(h)
+            if h in e.historique_hash:
+                continue
+            dernier = (q, h)
+            if niveau_complexite and q["niveau_complexite"] != niveau_complexite:
+                continue
+            break
+        if dernier is None:
+            return None
+        q, h = dernier
+        e.historique_hash.add(h)
         q["hash"] = h
-        # Forcer le niveau demandé pour cohérence avec la fiche
-        q["niveau_complexite"] = niveau_complexite
-    return q
+        q["niveau_demande"] = niveau_complexite
+        q["niveau_atteint"] = (niveau_complexite is None or
+                               q["niveau_complexite"] == niveau_complexite)
+        return q
+    finally:
+        _local.etat = precedent
 
-def _construire(g, code, bloom, niveau, params):
+
+def _construire(g, code, bloom, params):
     BUILDERS = {
         "prop":       _prop,
         "vver":       _vver,
@@ -640,16 +705,22 @@ def _construire(g, code, bloom, niveau, params):
         "contrap":    _contrap,
     }
     enonce, rep, dist, meta = BUILDERS[g["type"]](params, bloom)
-    # Filtrage centralisé : éviter répétitions de distracteurs en session
+    rep, dist = _nettoyer_options(rep, dist)
     dist = filtrer_distracteurs(dist, 3)
-    cx = calculer_complexite(
-        nb_propositions    = meta.get("nb_propositions", 2),
-        nb_connecteurs     = meta.get("nb_connecteurs", 1),
-        nb_quantificateurs = meta.get("nb_quantificateurs", 0),
-        nb_negations       = meta.get("nb_negations", 0),
-        profondeur_logique = meta.get("profondeur_logique", 1),
-        mode_bloom         = bloom,
-    )
+    choix = [rep] + dist                      # options réellement affichées
+
+    nb_neg = NEGATIONS_PAR_OBJECTIF.get(code, meta.get("nb_negations", 0))
+    variables = {
+        "nb_propositions":    meta.get("nb_propositions", 2),
+        "nb_connecteurs":     meta.get("nb_connecteurs", 1),
+        "nb_quantificateurs": meta.get("nb_quantificateurs", 0),
+        "nb_negations":       nb_neg,
+        "profondeur_logique": meta.get("profondeur_logique", 1),
+    }
+    cx = calculer_complexite(mode_bloom=bloom, **variables)
+    prop_a = meta.get("prop_a")
+    ea = calculer_ert_a(prop_a, enonce, choix)
+
     return {
         "objectif_code":       code,
         "mode_bloom":          bloom,
@@ -657,14 +728,27 @@ def _construire(g, code, bloom, niveau, params):
         "enonce":              enonce,
         "reponse_correcte":    rep,
         "distracteurs":        dist,
+        "nb_choix":            len(choix),
+        # ERT-B (formule actuelle) — clé historique conservée
         "ert_secondes":        cx["ert_secondes"],
+        "ert_b_s":             cx["ert_b_s"],
+        "ert_b_structurel_s":  cx["ert_b_structurel_s"],
+        "ert_b_detail":        cx["detail_calcul"],
         "score_pedagogique":   cx["score_pedagogique"],
-        "structure_syntaxique":g.get("structure","SVO"),
-        "profondeur_logique":  meta.get("profondeur_logique",1),
-        "nb_connecteurs":      meta.get("nb_connecteurs",1),
-        "nb_propositions":     meta.get("nb_propositions",2),
+        # ERT-A (Ms Generator V2)
+        "ert_a_s":             ea["ert_a_s"],
+        "ert_a_detail":        ea,
+        "ert_a_publie_s":      calculer_ert_a_version_publiee(prop_a, enonce, choix),
+        "prop_a":              prop_a,
+        "params_version":      PARAMS_VERSION,
+        # Variables structurelles (vraies valeurs, jamais réécrites)
+        "structure_syntaxique":g.get("structure", "SVO"),
+        "nb_propositions":     variables["nb_propositions"],
+        "nb_connecteurs":      variables["nb_connecteurs"],
+        "nb_quantificateurs":  variables["nb_quantificateurs"],
+        "nb_negations":        variables["nb_negations"],
+        "profondeur_logique":  variables["profondeur_logique"],
     }
-
 
 # ═════════════════════════════════════════════════════════════
 # BUILDERS — UN PAR OBJECTIF, AVEC DISTINCTION BLOOM
@@ -725,10 +809,11 @@ def _prop(params, bloom):
         if tmpl == 1:
             enonce = f"Pourquoi « {S} {v} {c} » est-elle une proposition logique ?"
             reponse = f"Parce qu'on peut déterminer si elle est Vraie ou Fausse."
+            # Longueurs comparables à celle de la bonne réponse
             dist = [
-                "Parce qu'elle contient un verbe d'action.",
-                "Parce qu'elle parle d'une personne réelle.",
-                "Parce qu'elle est grammaticalement correcte.",
+                "Parce qu'elle contient un sujet, un verbe et un complément.",
+                "Parce qu'elle parle d'une personne qui existe réellement.",
+                "Parce qu'elle est écrite dans un français correct.",
             ]
         elif tmpl == 2:
             non_prop = random.choice(ENONCES_NON_PROP)
@@ -750,6 +835,7 @@ def _prop(params, bloom):
 
     random.shuffle(dist)
     meta = {"nb_propositions":1,"nb_connecteurs":0,"nb_negations":0,"profondeur_logique":0}
+    meta["prop_a"] = _p_simple()
     return enonce, reponse, dist[:3], meta
 
 
@@ -758,15 +844,15 @@ def _vver(params, bloom):
     Varie le connecteur ET le cas pour éviter les répétitions.
     """
     # Varier les connecteurs pour plus de diversité
-    global _vver_pool_global
-    if not _vver_pool_global:
-        _vver_pool_global = [
+    pool = _etat().pool_vver
+    if not pool:
+        pool.extend(
             (ck, vp, vq)
             for ck in ["ET","OU","IMP","EQUIV"]
             for vp,vq in [("V","V"),("V","F"),("F","V"),("F","F")]
-        ]
-        random.shuffle(_vver_pool_global)
-    conn_key, vp, vq = _vver_pool_global.pop()
+        )
+        random.shuffle(pool)
+    conn_key, vp, vq = pool.pop()
     conn = CONNECTEURS[conn_key]
     res      = TABLES[conn["formel"]][(vp,vq)]
     rep_txt  = "Vraie" if res=="V" else "Fausse"
@@ -787,6 +873,7 @@ def _vver(params, bloom):
 
     dist = [autre]
     meta = {"nb_propositions":2,"nb_connecteurs":1,"nb_negations":0,"profondeur_logique":1}
+    meta["prop_a"] = _p_compose(conn_key, _p_symbole(), _p_symbole())
     return enonce, rep_txt, dist, meta
 
 
@@ -794,15 +881,15 @@ def _tver(params, bloom):
     """TVER — Table de vérité. Réponse binaire : Vraie/Fausse.
     Varie le connecteur ET le template.
     """
-    global _vver_pool_global
-    if not _vver_pool_global:
-        _vver_pool_global = [
+    pool = _etat().pool_vver
+    if not pool:
+        pool.extend(
             (ck, vp, vq)
             for ck in ["ET","OU","IMP","EQUIV"]
             for vp,vq in [("V","V"),("V","F"),("F","V"),("F","F")]
-        ]
-        random.shuffle(_vver_pool_global)
-    conn_key, vp, vq = _vver_pool_global.pop()
+        )
+        random.shuffle(pool)
+    conn_key, vp, vq = pool.pop()
     conn = CONNECTEURS[conn_key]
     res      = TABLES[conn["formel"]][(vp,vq)]
     rep_txt  = "Vraie" if res=="V" else "Fausse"
@@ -822,6 +909,7 @@ def _tver(params, bloom):
 
     dist = [autre]
     meta = {"nb_propositions":2,"nb_connecteurs":1,"nb_negations":0,"profondeur_logique":1}
+    meta["prop_a"] = _p_compose(conn_key, _p_symbole(), _p_symbole())
     return enonce, rep_txt, dist, meta
 
 
@@ -871,6 +959,7 @@ def _neg_simple(params, bloom):
     random.shuffle(dist)
     meta = {"nb_propositions":1,"nb_connecteurs":0,
             "nb_negations":0,"profondeur_logique":0}
+    meta["prop_a"] = _p_simple()
     return enonce, reponse, dist[:3], meta
 
 
@@ -918,16 +1007,14 @@ def _conn_id(params, bloom):
             f"La phrase « {phrase} » utilise un connecteur logique. "
             f"Lequel, et que signifie-t-il formellement ?"
         )
+        # Même forme pour toutes les options : « symbole (NOM) »
         reponse = f"{conn['formel']} ({conn_key})"
-        dist = [
-            f"∧ (ET) — les deux doivent être vraies",
-            f"∨ (OU) — au moins une est vraie",
-            f"⇒ (SI...ALORS) — implication",
-        ]
-        dist = [d for d in dist if not d.startswith(conn['formel'])][:3]
+        dist = [f"{c['formel']} ({k})" for k, c in CONNECTEURS.items()
+                if k != conn_key]
 
     random.shuffle(dist)
     meta = {"nb_propositions":2,"nb_connecteurs":1,"nb_negations":0,"profondeur_logique":0}
+    meta["prop_a"] = _p_compose(conn_key)
     return enonce, reponse, dist[:3], meta
 
 
@@ -975,6 +1062,7 @@ def _conn_trad(params, bloom):
 
     random.shuffle(dist)
     meta = {"nb_propositions":2,"nb_connecteurs":1,"nb_negations":0,"profondeur_logique":1}
+    meta["prop_a"] = _p_compose(conn_key)
     return enonce, reponse, dist[:3], meta
 
 
@@ -1024,6 +1112,7 @@ def _conn_inv(params, bloom):
 
     random.shuffle(dist)
     meta = {"nb_propositions":2,"nb_connecteurs":1,"nb_negations":0,"profondeur_logique":1}
+    meta["prop_a"] = _p_compose(conn_key)
     return enonce, reponse, dist[:3], meta
 
 
@@ -1056,6 +1145,7 @@ def _imp(params, bloom):
 
     dist = [autre]
     meta = {"nb_propositions":2,"nb_connecteurs":1,"nb_negations":0,"profondeur_logique":2}
+    meta["prop_a"] = _p_compose("IMP")
     return enonce, rep, dist, meta
 
 
@@ -1168,6 +1258,7 @@ def _equiv(params, bloom):
     random.shuffle(dist)
     meta = {"nb_propositions":2,"nb_connecteurs":1,
             "nb_negations":0,"profondeur_logique":2}
+    meta["prop_a"] = _p_compose("EQUIV")
     return enonce, reponse, dist[:3], meta
 
 
@@ -1233,6 +1324,7 @@ def _morgan(params, bloom):
     random.shuffle(dist)
     meta = {"nb_propositions":2,"nb_connecteurs":1,
             "nb_negations":0,"profondeur_logique":0}
+    meta["prop_a"] = _p_compose(conn)
     return enonce, reponse, dist[:3], meta
 
 
@@ -1272,39 +1364,35 @@ def _neg_comp(params, bloom):
         # Justifier le choix du connecteur dans la négation
         enonce = (
             f"On nie : « {p} {ln} {q} ».\n"
-            f"Quelle est la négation et comment justifier "
-            f"le changement de connecteur ?"
+            f"Quelle est sa négation, et quelle règle la justifie ?"
         )
         if conn == "ET":
-            reponse = (
-                f"« {np} ou {nq} » "
-                f"— ¬(P ∧ Q) ≡ ¬P ∨ ¬Q : ET devient OU, chaque membre est nié"
-            )
+            reponse = f"« {np} ou {nq} » — car ¬(P ∧ Q) ≡ ¬P ∨ ¬Q"
             dist = [
-                # Erreur 1 : nie les membres mais garde ET (n'inverse pas le connecteur)
-                f"« {np} et {nq} » — ¬(P ∧ Q) ≡ ¬P ∧ ¬Q : erreur, ET ne change pas",
-                # Erreur 2 : ne nie qu'un seul membre
-                f"« {np} ou {q} » — erreur : Q n'est pas niée",
+                # Nie les membres mais garde ET
+                f"« {np} et {nq} » — car ¬(P ∧ Q) ≡ ¬P ∧ ¬Q",
+                # Ne nie qu'un seul membre
+                f"« {np} ou {q} » — car ¬(P ∧ Q) ≡ ¬P ∨ Q",
                 # Erreur 3 : nie l'ensemble sans toucher aux membres
-                f"« il est faux que {p} et {q} » — forme correcte mais non développée",
+                # Change le connecteur sans nier les membres
+                f"« {p} ou {q} » — car ¬(P ∧ Q) ≡ P ∨ Q",
             ]
         else:
-            reponse = (
-                f"« {np} et {nq} » "
-                f"— ¬(P ∨ Q) ≡ ¬P ∧ ¬Q : OU devient ET, chaque membre est nié"
-            )
+            reponse = f"« {np} et {nq} » — car ¬(P ∨ Q) ≡ ¬P ∧ ¬Q"
             dist = [
-                # Erreur 1 : nie les membres mais garde OU
-                f"« {np} ou {nq} » — ¬(P ∨ Q) ≡ ¬P ∨ ¬Q : erreur, OU ne change pas",
-                # Erreur 2 : ne nie qu'un seul membre
-                f"« {p} et {nq} » — erreur : P n'est pas niée",
+                # Nie les membres mais garde OU
+                f"« {np} ou {nq} » — car ¬(P ∨ Q) ≡ ¬P ∨ ¬Q",
+                # Ne nie qu'un seul membre
+                f"« {p} et {nq} » — car ¬(P ∨ Q) ≡ P ∧ ¬Q",
                 # Erreur 3 : nie l'ensemble sans développer
-                f"« il est faux que {p} ou {q} » — forme correcte mais non développée",
+                # Change le connecteur sans nier les membres
+                f"« {p} et {q} » — car ¬(P ∨ Q) ≡ P ∧ Q",
             ]
 
     random.shuffle(dist)
     meta = {"nb_propositions":2,"nb_connecteurs":1,
             "nb_negations":0,"profondeur_logique":0}
+    meta["prop_a"] = _p_compose(conn)
     return enonce, reponse, dist[:3], meta
 
 
@@ -1342,27 +1430,23 @@ def _neg_imp(params, bloom):
         # Justifier pourquoi ¬(P⇒Q) = P ∧ ¬Q
         enonce = (
             f"On veut nier : « Si {_min(p)}, alors {q} ».\n"
-            f"Quelle est la négation et pourquoi ?"
+            f"Quelle est sa négation, et quelle règle la justifie ?"
         )
-        reponse = (
-            f"« {p} et {nq} » — ¬(P ⇒ Q) ≡ P ∧ ¬Q : "
-            f"P reste vraie et seule Q est niée"
-        )
+        # Chaque option porte la règle qui la justifierait (même forme)
+        reponse = f"« {p} et {nq} » — car ¬(P ⇒ Q) ≡ P ∧ ¬Q"
         dist = [
-            # Erreur 1 : ne nier que la conclusion (très fréquente)
-            f"« Si {_min(p)}, alors {nq} » "
-            f"— erreur : ¬(P⇒Q) ≠ P⇒¬Q",
-            # Erreur 2 : appliquer ¬P∨¬Q au lieu de P∧¬Q
-            f"« {np} ou {nq} » "
-            f"— erreur : confusion avec De Morgan sur ∧",
-            # Erreur 3 : prendre la contraposée pour la négation
-            f"« Si {_min(nq)}, alors {_min(np)} » "
-            f"— erreur : c'est la contraposée, pas la négation",
+            # Ne nier que la conclusion (très fréquente)
+            f"« Si {_min(p)}, alors {nq} » — car ¬(P ⇒ Q) ≡ P ⇒ ¬Q",
+            # Appliquer De Morgan comme pour une conjonction
+            f"« {np} ou {nq} » — car ¬(P ⇒ Q) ≡ ¬P ∨ ¬Q",
+            # Prendre la contraposée pour la négation
+            f"« Si {_min(nq)}, alors {_min(np)} » — car ¬(P ⇒ Q) ≡ ¬Q ⇒ ¬P",
         ]
 
     random.shuffle(dist)
     meta = {"nb_propositions":1,"nb_connecteurs":1,
             "nb_negations":0,"profondeur_logique":0}
+    meta["prop_a"] = _p_compose("IMP")
     return enonce, reponse, dist[:3], meta
 
 
@@ -1406,20 +1490,21 @@ def _quant_trad(params, bloom):
             f"Quelle formule traduit correctement cet énoncé "
             f"et que signifie le quantificateur utilisé ?"
         )
-        sens = {
-            "UNIVERSEL":    f"{formel} — le quantificateur ∀ signifie « pour tout » : la propriété est vraie pour TOUS les éléments",
-            "EXISTENTIEL":  f"{formel} — le quantificateur ∃ signifie « il existe » : la propriété est vraie pour AU MOINS UN élément",
-        }
-        reponse = sens[quant]
+        SENS = {"∀": "la propriété est vraie pour tous les éléments",
+                "∃": "la propriété est vraie pour au moins un élément"}
+        reponse = f"{formel} — car {SENS[sym]}"
         dist    = [
-            f"{autre} — le quantificateur {autre_sym} signifie l'inverse",
-            f"{sym}x, ¬P(x) — on nie la propriété au lieu de l'affirmer",
-            f"¬({formel}) — on nie toute la proposition",
+            f"{autre} — car {SENS[autre_sym]}",
+            f"{sym}x, ¬P(x) — car la propriété est fausse pour "
+            + ("tous les éléments" if sym == "∀" else "au moins un élément"),
+            f"¬({formel}) — car la propriété n'est pas vraie pour "
+            + ("tous les éléments" if sym == "∀" else "aucun élément"),
         ]
 
     random.shuffle(dist)
     meta = {"nb_propositions":1,"nb_connecteurs":0,
             "nb_quantificateurs":1,"nb_negations":0,"profondeur_logique":0}
+    meta["prop_a"] = _p_simple("QU" if quant == "UNIVERSEL" else "QE")
     return enonce, reponse, dist[:3], meta
 
 
@@ -1450,7 +1535,7 @@ def _neg_quant_q(params, bloom):
         # Distracteurs : erreurs documentées sur la négation des quantificateurs
         dist    = [
             # Erreur 1 (très fréquente) : ne nier que la propriété sans inverser ∀/∃
-            _quant(quant, nom, f"ne {v} pas", c),
+            _quant_prop_niee(quant, nom, v, c),
             # Erreur 2 : inverser le quantificateur mais sans nier la propriété
             prop_inv,
             # Erreur 3 : nier deux fois (revient à la proposition initiale)
@@ -1465,19 +1550,20 @@ def _neg_quant_q(params, bloom):
         )
         enonce = (
             f"On veut nier : « {prop} ».\n"
-            f"Quelle est la négation et quelle règle justifie "
-            f"le changement de quantificateur ?"
+            f"Quelle est sa négation, et quelle règle la justifie ?"
         )
-        reponse = f"« {neg} » — car {regle} : le quantificateur s'inverse et la propriété se nie"
+        Qf, Qi = ("∀", "∃") if quant == "UNIVERSEL" else ("∃", "∀")
+        reponse = f"« {neg} » — car {regle}"
         dist    = [
-            f"« {_quant(quant, nom, f'ne {v} pas', c)} » — on ne nie que la propriété sans inverser le quantificateur",
-            f"« {prop_inv} » — on inverse le quantificateur sans nier la propriété",
-            f"« {_neg_quant(quant_inv, nom, v, c)} » — on inverse tout mais dans le mauvais sens",
+            f"« {_quant_prop_niee(quant, nom, v, c)} » — car ¬({Qf}x, P(x)) ≡ {Qf}x, ¬P(x)",
+            f"« {prop_inv} » — car ¬({Qf}x, P(x)) ≡ {Qi}x, P(x)",
+            f"« {prop} » — car ¬({Qf}x, P(x)) ≡ {Qf}x, P(x)",
         ]
 
     random.shuffle(dist)
     meta = {"nb_propositions":1,"nb_connecteurs":1,
             "nb_quantificateurs":1,"nb_negations":0,"profondeur_logique":0}
+    meta["prop_a"] = _p_simple("QU" if quant == "UNIVERSEL" else "QE")
     return enonce, reponse, dist[:3], meta
 
 
@@ -1509,19 +1595,20 @@ def _contrap(params, bloom):
             f"Parmi les propositions suivantes, laquelle est "
             f"la contraposée (et non la réciproque ou l'inverse) ?"
         )
-        reponse = f"« Si {_min(nq)}, alors {_min(np)} » — contraposée ¬Q ⇒ ¬P, équivalente à P ⇒ Q"
+        reponse = f"« Si {_min(nq)}, alors {_min(np)} » — car la contraposée de P ⇒ Q est ¬Q ⇒ ¬P"
         dist    = [
-            # Erreur 1 (très fréquente) : prendre la réciproque pour la contraposée
-            f"« Si {_min(q)}, alors {_min(p)} » — réciproque Q ⇒ P : on inverse sans nier",
-            # Erreur 2 : prendre l'inverse (¬P ⇒ ¬Q) pour la contraposée
-            f"« Si {_min(np)}, alors {_min(nq)} » — inverse ¬P ⇒ ¬Q : on nie sans inverser",
-            # Erreur 3 : ne nier que la conclusion dans la réciproque
-            f"« Si {_min(q)}, alors {_min(np)} » — erreur mixte : ni contraposée ni réciproque",
+            # Réciproque prise pour la contraposée (très fréquente)
+            f"« Si {_min(q)}, alors {_min(p)} » — car la contraposée de P ⇒ Q est Q ⇒ P",
+            # Inverse prise pour la contraposée
+            f"« Si {_min(np)}, alors {_min(nq)} » — car la contraposée de P ⇒ Q est ¬P ⇒ ¬Q",
+            # Négation partielle
+            f"« Si {_min(q)}, alors {_min(np)} » — car la contraposée de P ⇒ Q est Q ⇒ ¬P",
         ]
 
     random.shuffle(dist)
     meta = {"nb_propositions":2,"nb_connecteurs":1,
             "nb_negations":0,"profondeur_logique":0}
+    meta["prop_a"] = _p_compose("IMP")
     return enonce, reponse, dist[:3], meta
 
 
